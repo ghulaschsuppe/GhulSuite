@@ -26,6 +26,10 @@ abstract class CoreUpdater(private val suffix: String) : AppUpdater {
         mapped { updateCheck(BuildInfo.UPDATE_REPO, BuildInfo.VERSION, suffix, BuildInfo.UPDATE_KEY, prerelease) }
     }.also { found = it }?.let { UpdateUi(it.version, it.notes, it.page, it.size.toLong()) }
 
+    /** The SHA-256 (hex, from the signed SHA256SUMS) of the update [check] found. */
+    protected fun expectedSha256(update: UpdateUi): String =
+        found?.takeIf { it.version == update.version }?.sha256 ?: error("no update checked")
+
     /** Downloads the update found by [check] into [dir]; the checked file. */
     protected suspend fun download(update: UpdateUi, dir: File): File = withContext(Dispatchers.IO) {
         val info = found?.takeIf { it.version == update.version } ?: error("no update checked")

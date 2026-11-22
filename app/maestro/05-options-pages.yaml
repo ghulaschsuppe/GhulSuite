@@ -5,10 +5,14 @@ name: Options pages
 - launchApp:
     stopApp: false
 - tapOn: { id: "tab-settings" }
-# The tab keeps its place from before (on purpose): start at the top.
+# The tab keeps its place from before (on purpose): start at the top ("Lock now" stays above
+# any banner, e.g. the one about unsaved entries, also in landscape).
+- scrollUntilVisible:
+    element: "Lock now|Jetzt sperren"
+    direction: UP
 - scrollUntilVisible:
     element: "Unlocking|Entsperren"
-    direction: UP
+    direction: DOWN
 - runFlow:
     file: open-option.yaml
     env: { PAGE: "Unlocking", SHOT: "05-unlocking" }

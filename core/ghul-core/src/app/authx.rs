@@ -35,8 +35,13 @@ fn pct(s: &str) -> String {
 
 #[uniffi::export]
 impl GhulSuite {
-    /// The account as `otpauth://` link, e.g. for a QR code to move it to another app.
-    pub fn totp_uri(&self, vault_id: String, id: Vec<u8>) -> Result<String> {
+    /// The account as `otpauth://` link, e.g. for a QR code to move it to another app. It holds
+    /// the 2FA secret in the clear, so only with the master password (M13: who finds the app
+    /// unlocked must not photograph it); a wrong one is `WrongPassword`.
+    pub fn totp_uri(&self, vault_id: String, id: Vec<u8>, password: String) -> Result<String> {
+        if password.is_empty() || !self.verify_password(password)? {
+            return Err(GhulError::WrongPassword);
+        }
         self.with_open(|o| {
             let (_, c) = o.entry_vault_mut(&vault_id)?;
             let e = c

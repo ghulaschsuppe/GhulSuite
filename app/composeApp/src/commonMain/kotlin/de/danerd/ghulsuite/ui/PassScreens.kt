@@ -106,7 +106,6 @@ import androidx.compose.material.icons.filled.Key
 @Composable
 fun PassListScreen(state: AppState, padding: PaddingValues) {
     var entries by remember { mutableStateOf<List<EntrySummaryUi>?>(null) }
-    var report by remember { mutableStateOf<SecurityReportUi?>(null) }
     var query by remember { mutableStateOf("") }
     var filter by remember { mutableStateOf("") }
     var error by remember { mutableStateOf<String?>(null) }
@@ -115,7 +114,8 @@ fun PassListScreen(state: AppState, padding: PaddingValues) {
     LaunchedEffect(state.liveRevision(), state.passVault, retry) {
         catching { state.backend.listEntries(state.passVault) }
             .onSuccess { entries = it; error = null }.onFailure { error = describe(it); if (entries == null) entries = emptyList() }
-        report = catching { state.backend.securityReport() }.getOrNull()
+        // M33: the security check (strength of every password) runs only on its own page, not
+        // after every change here: on an old phone it takes seconds and holds the core meanwhile.
     }
     val showVault = vaults.size > 1 && state.passVault == null
     val q = query.trim().lowercase()
@@ -179,8 +179,9 @@ fun PassListScreen(state: AppState, padding: PaddingValues) {
                     selected.clear()
                     state.run(block = { list.forEach { state.backend.setFavorite(it.vaultId, it.id, !allFav) } }) { state.changed() }
                 })
-                // Picked entries of one vault: into a vault file of their own.
-                chosen.map { it.vaultId }.distinct().singleOrNull()?.let { v ->
+                // Picked entries of one vault: into a vault file of their own (not from a vault
+                // opened on its own: the proof would be that of the own suite).
+                chosen.map { it.vaultId }.distinct().singleOrNull()?.takeIf { state.single == null }?.let { v ->
                     add(SelAction(Icons.Filled.Share, stringResource(Res.string.share_vault_action)) {
                         selected.clear()
                         sharing = v to chosen.map { it.id }
@@ -208,15 +209,13 @@ fun PassListScreen(state: AppState, padding: PaddingValues) {
             }
         }
         if (q.isEmpty() && filter.isEmpty() && all.isNotEmpty()) {
-            val r = report
-            if (r != null && r.checked > 0) {
+            if (all.any { it.type == "login" }) {
                 item(key = "security") {
-                    val count = r.issues.map { it.id }.distinct().size
                     ListCard(Modifier.padding(horizontal = 16.dp)) {
                         ListRow(
                             stringResource(Res.string.sec_title),
-                            if (count == 0) stringResource(Res.string.sec_all_good) else pluralStringResource(Res.plurals.sec_n_need_attention, count, count.toString()),
-                            leading = { IconTile(Icons.Filled.VerifiedUser, if (count == 0) t.ok else paletteColor(3)) },
+                            stringResource(Res.string.sec_card_sub),
+                            leading = { IconTile(Icons.Filled.VerifiedUser, paletteColor(3)) },
                             trailing = { ChevronEnd() },
                         ) { state.push(Screen.Security) }
                     }
@@ -433,7 +432,7 @@ fun EntryDetailScreen(state: AppState, vaultId: String, id: String, padding: Pad
         var pw by remember { mutableStateOf("") }
         var error by remember { mutableStateOf<String?>(null) }
         val savedMsg = stringResource(Res.string.msg_saved_file)
-        val saveExport = rememberSaveFile { ok -> if (ok) { state.message(savedMsg); sheet = "" } }
+        val saveExport = rememberSaveFile { r -> state.reportSaveFile(r, savedMsg); if (r == SaveFileResult.SAVED) sheet = "" }
         val fileName = (e.value("title").ifBlank { "eintrag" }).replace(Regex("[^\\p{L}\\p{N} ._-]"), "_") + ".csv"
         GhulSheet({ sheet = "" }, stringResource(Res.string.pass_export_one)) {
             HintText(stringResource(Res.string.pass_export_one_warning))
@@ -559,7 +558,7 @@ private fun EntryCodeCard(state: AppState, secret: String) {
 @Composable
 private fun AttachmentsSheet(state: AppState, vaultId: String, id: String, list: List<de.danerd.ghulsuite.model.AttachmentUi>, onChanged: () -> Unit, onDismiss: () -> Unit) {
     val savedMsg = stringResource(Res.string.msg_saved_file)
-    val save = rememberSaveFile { ok -> if (ok) state.message(savedMsg) }
+    val save = rememberSaveFile { state.reportSaveFile(it, savedMsg) }
     val add = rememberOpenFile { f -> state.run(block = { state.backend.addAttachment(vaultId, id, f.name, f.bytes) }) { onChanged(); state.changed() } }
     val removedMsg = stringResource(Res.string.msg_deleted)
     // F103: removing a file asks first; "Undo" in the snackbar brings it back as well.
@@ -624,7 +623,12 @@ fun SecurityScreen(state: AppState, padding: PaddingValues) {
     LaunchedEffect(settings.pwnedCheck, entries) { if (settings.pwnedCheck && breached == null && entries.isNotEmpty()) check() }
     Column(Modifier.padding(padding)) {
         ScreenColumn {
-            val r = report ?: return@ScreenColumn
+            val r = report
+            if (r == null) {
+                HintText(stringResource(Res.string.sec_checking))
+                return@ScreenColumn
+            }
+            val count = r.issues.map { it.id }.distinct().size
             Row(
                 Modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp)).background(t.surface).padding(16.dp),
                 verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp),
@@ -636,6 +640,10 @@ fun SecurityScreen(state: AppState, padding: PaddingValues) {
                         r.score >= 70 -> Res.string.sec_score_good
                         else -> Res.string.sec_score_bad
                     }), fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                    Text(
+                        if (count == 0) stringResource(Res.string.sec_all_good) else pluralStringResource(Res.plurals.sec_n_need_attention, count, count.toString()),
+                        color = t.muted,
+                    )
                     Text(stringResource(Res.string.sec_local), color = t.muted)
                 }
             }
@@ -724,6 +732,8 @@ fun EntryEditScreen(state: AppState, vaultId: String, id: String?, type: String,
     var loaded by remember { mutableStateOf(id == null) }
     val customOrder = remember { androidx.compose.runtime.mutableStateListOf<String>() }
     var addField by remember { mutableStateOf(false) }
+    // M13: a stored 2FA key is shown only after the master password ("show" waits here).
+    var revealTotp by remember { mutableStateOf<(() -> Unit)?>(null) }
     LaunchedEffect(id) {
         if (id != null) {
             catching { state.backend.getEntry(vaultId, id) }
@@ -754,6 +764,7 @@ fun EntryEditScreen(state: AppState, vaultId: String, id: String?, type: String,
         }.filter { it.value.isNotEmpty() } + kept
         state.run(block = { state.backend.saveEntry(EntryUi(vaultId, id, type, fields)) }) { newId ->
             state.changed()
+            state.promptSave()
             state.pop()
             if (id == null) state.push(Screen.EntryDetail(vaultId, newId))
         }
@@ -777,7 +788,9 @@ fun EntryEditScreen(state: AppState, vaultId: String, id: String?, type: String,
                             IconButton(onClick = { generatorFor = f.name }) {
                                 Icon(Icons.Filled.Password, stringResource(Res.string.a_generate))
                             }
-                        }) else null)
+                        }) else null, onReveal = if (f.name == "totp" && original?.fields?.any { it.name == "totp" && it.value.isNotEmpty() } == true) {
+                            { show -> revealTotp = show }
+                        } else null)
                         EditKind.TEXT -> OutlinedTextField(
                             v, { values[f.name] = it }, label = { Text(stringResource(f.label)) },
                             singleLine = true, modifier = Modifier.fillMaxWidth(),
@@ -804,6 +817,13 @@ fun EntryEditScreen(state: AppState, vaultId: String, id: String?, type: String,
                 Icon(Icons.Filled.Add, null, Modifier.size(18.dp)); Text(stringResource(Res.string.pass_add_field))
             }
         }
+    }
+    revealTotp?.let { show ->
+        PasswordGateDialog(
+            state, stringResource(Res.string.f_totp), stringResource(Res.string.pass_totp_reveal),
+            confirmLabel = stringResource(Res.string.a_show),
+            onDismiss = { revealTotp = null },
+        ) { revealTotp = null; show() }
     }
     if (addField) {
         NameDialog(stringResource(Res.string.pass_add_field), "", onDismiss = { addField = false }) { name ->

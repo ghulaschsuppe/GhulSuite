@@ -4,12 +4,13 @@
 
 use super::super::archive::{
     archive_written_matches, in_memory, ArchiveProgress, ArchiveRelation, ArchiveTarget, HEADER_FILE,
+    OTHER_SUITE_NEEDS_PROOF,
 };
 use super::super::zipstream::ZipWriter;
 use super::*;
 use crate::vault::{Keyfile, LockedContainer, RecoveryCode};
 
-const PW: &str = "pw-123456";
+const PW: &str = "pw-123456-Kq7wZ";
 
 /// A device with a new suite (one login), its key file and recovery code.
 fn device_with_suite(name: &str) -> (Dirs, Arc<GhulSuite>, Vec<u8>, String) {
@@ -126,9 +127,17 @@ fn a_branch_unsaved_changes_and_another_suite_are_noticed() {
     let check = c.archive_open_bytes(other.clone(), PW.into(), None, None, None, Some(kfc.clone())).unwrap();
     assert_eq!(check.relation, ArchiveRelation::Same);
     c.archive_cancel();
+    let kfc_copy = kfc.clone();
     let check = a.archive_open_bytes(other, PW.into(), None, None, None, Some(kfc)).unwrap();
     assert_eq!(check.relation, ArchiveRelation::OtherSuite);
-    a.archive_accept().unwrap();
+    // H5: it replaces A's suite, so only with A's proof; the checked file stays for that.
+    let r = a.archive_accept();
+    assert!(matches!(&r, Err(GhulError::InvalidInput { msg }) if msg == OTHER_SUITE_NEEDS_PROOF), "{r:?}");
+    assert!(matches!(a.archive_accept_replacing(no_key_proof(PW), None, None), Err(GhulError::KeyfileRequired)));
+    assert!(matches!(a.archive_accept_replacing(kf_proof(PW, &kfc_copy), None, None), Err(GhulError::WrongKeyfile)));
+    assert!(matches!(a.archive_accept_replacing_with_code("AAAAA".into()), Err(GhulError::InvalidRecoveryCode)));
+    assert_eq!(titles(&a), vec!["Bank", "Von A"], "nothing replaced yet");
+    a.archive_accept_replacing(kf_proof(PW, &kf), None, None).unwrap();
     assert_eq!(titles(&a), vec!["Bank"], "the other suite replaced everything");
 }
 
@@ -223,7 +232,7 @@ fn the_recovery_code_opens_a_file_unverified_and_sets_a_new_password() {
 fn opening_a_file_removes_this_devices_data_of_the_old_state() {
     let (_da, a, kf, _) = device_with_suite("wipe-a");
     let file = save(&a);
-    a.quick_unlock_enable(PW.into(), "pin".into(), Some("1234".into())).unwrap();
+    a.quick_unlock_enable(kf_proof(PW, &kf), None, None, "pin".into(), Some("123456".into()), 3600).unwrap();
     assert!(a.quick_unlock_exists("pin".into()));
     // The same protection (a newer state from the other device): quick unlock stays.
     open(&a, &file, &kf);
@@ -312,7 +321,8 @@ fn changed_files_are_refused() {
     let r = b.archive_open_bytes(zip_of(&forged), PW.into(), None, None, None, Some(kf.clone()));
     assert!(matches!(r, Err(GhulError::Tampered)), "{:?}", r.err());
     // With the code alone it opens (unverified, the emergency case) but shows it.
-    let check = b.archive_open_with_code_bytes(zip_of(&forged), code.to_display().to_string(), "x-neu-123".into());
+    let check =
+        b.archive_open_with_code_bytes(zip_of(&forged), code.to_display().to_string(), "x-neu-123-Kq7wZ".into());
     assert!(check.unwrap().unverified);
     b.archive_cancel();
     // A forged key file slot: the attacker's key file is let in nowhere.
@@ -791,9 +801,9 @@ fn an_attachment_that_cannot_be_saved_goes_again() {
 /// Turning quick unlock off removes its copies as well (they hold the same keys).
 #[test]
 fn quick_unlock_off_leaves_no_copy() {
-    let (d, a, _kf, _) = device_with_suite("quick-bak");
-    a.quick_unlock_enable(PW.into(), "pin".into(), Some("123456".into())).unwrap();
-    a.quick_unlock_enable(PW.into(), "pin".into(), Some("654321".into())).unwrap();
+    let (d, a, kf, _) = device_with_suite("quick-bak");
+    a.quick_unlock_enable(kf_proof(PW, &kf), None, None, "pin".into(), Some("123456".into()), 3600).unwrap();
+    a.quick_unlock_enable(kf_proof(PW, &kf), None, None, "pin".into(), Some("654321".into()), 3600).unwrap();
     let dir = std::path::PathBuf::from(d.local());
     assert!(dir.join("quick-pin.ghlq.bak").exists(), "a copy of the first one");
     a.quick_unlock_disable("pin".into()).unwrap();
@@ -829,7 +839,7 @@ fn the_same_epoch_with_another_protection_removes_quick_unlock() {
     open(&b, &file, &kf);
     b.archive_accept().unwrap();
     a.new_recovery_code(kf_proof(PW, &kf), None, None, "neu".into()).unwrap();
-    a.quick_unlock_enable(PW.into(), "pin".into(), Some("1234".into())).unwrap();
+    a.quick_unlock_enable(kf_proof(PW, &kf), None, None, "pin".into(), Some("123456".into()), 3600).unwrap();
     b.change_password(kf_proof(PW, &kf), None, None, "pw-neu-7890".into()).unwrap();
     let from_b = save(&b);
     a.archive_open_bytes(from_b, "pw-neu-7890".into(), None, None, None, Some(kf.clone())).unwrap();

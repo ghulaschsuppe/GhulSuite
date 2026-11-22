@@ -418,6 +418,41 @@ class DocsInteractionTest {
         assertEquals("Zählerstand Strom: 4711\nWasser: 815\n", fake.shared[0].second.decodeToString())
     }
 
+    /**
+     * H4: a program in a (foreign) package, here "Rechnung.pdf.exe" with a stored PDF type, is
+     * not handed to another app: nothing is decrypted or shared, the message names the ending.
+     */
+    @Test
+    fun openWithRefusesPrograms() = app(prepare = {
+        docs.nodes += FakeDocs.Node("d1", "x1", null, "Rechnung.pdf.exe", false, "MZ".encodeToByteArray(), "application/pdf")
+        docs.nodes += FakeDocs.Node("d1", "x2", null, "Brief.pdf.lnk ", false, "L".encodeToByteArray(), "application/pdf")
+    }) { state, fake ->
+        waitFor("Notizen.txt")
+        for (id in listOf("x1", "x2")) {
+            val item = runBlockingItem(fake, id)
+            runOnIdle { state.openDocWith(item) }
+            waitUntil(timeoutMillis = 10_000) { !state.jobs.running }
+        }
+        waitUntil(timeoutMillis = 10_000) { part("does not open files of the type .exe") }
+        assertTrue(fake.shared.isEmpty(), "no program is handed over")
+        assertFalse(fake.docs.calls.any { it.startsWith("read") }, "nothing was decrypted: ${fake.docs.calls}")
+    }
+
+    /** H4: an archive is opened only after the question (it can hold programs). */
+    @Test
+    fun anArchiveIsAskedFor() = app(prepare = {
+        docs.nodes += FakeDocs.Node("d1", "z1", null, "Fotos.zip", false, "PK".encodeToByteArray(), "application/zip")
+    }) { state, fake ->
+        waitFor("Notizen.txt")
+        val item = runBlockingItem(fake, "z1")
+        runOnIdle { state.openDocWith(item) }
+        waitUntil(timeoutMillis = 10_000) { part("Archives can hold programs") }
+        assertTrue(fake.shared.isEmpty(), "not before the answer")
+        onAllNodesWithTag("archive-open", useUnmergedTree = true).onFirst().performClick()
+        waitUntil(timeoutMillis = 10_000) { fake.shared.isNotEmpty() }
+        assertEquals("Fotos.zip", fake.shared[0].first)
+    }
+
     /** Locking leaves nothing of GhulDocs: no page with a document, no chosen vault, no shared files. */
     @Test
     fun lockClearsState() = app { state, fake ->
@@ -628,6 +663,7 @@ class DocsInteractionTest {
             fields[1].performTextReplacement("Anna-Passwort-2468!")
             fields[2].performTextReplacement("Anna-Passwort-2468!")
             fields[3].performTextReplacement("master")
+            fields[4].performTextReplacement("1234")
             dialogButton("Create")
             waitUntil(timeoutMillis = 10_000) { fake.calls.any { it.startsWith("shareAsVault:p1::Privat:true:master") } }
         }

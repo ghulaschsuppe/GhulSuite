@@ -270,6 +270,47 @@ pub fn password_strength(password: String) -> PasswordStrength {
     PasswordStrength { score: u8::from(e.score()), guesses_log10: e.guesses_log10() }
 }
 
+/// M42: the rules for the master password and the app PIN, the same in the core as in the app
+/// (the core enforces them where a password is set: `create`, `change_password`,
+/// `unlock_with_recovery_code`, and the app PIN in `quick_unlock_enable`).
+pub const PASSWORD_MIN_LENGTH: u32 = 10;
+/// The lowest zxcvbn score of a master password (0 to 4).
+pub const PASSWORD_MIN_SCORE: u8 = 3;
+/// The message when a new master password is shorter than [`PASSWORD_MIN_LENGTH`].
+pub const PASSWORD_TOO_SHORT: &str = "the master password is too short";
+/// The message when a new master password scores below [`PASSWORD_MIN_SCORE`].
+pub const PASSWORD_TOO_WEAK: &str = "the master password is too weak";
+
+/// The rules of [`PASSWORD_MIN_LENGTH`], [`PASSWORD_MIN_SCORE`] and the shortest app PIN.
+#[derive(uniffi::Record, Clone, Debug, PartialEq, Eq)]
+pub struct SecurityRules {
+    /// Characters (Unicode scalar values) a master password has at least.
+    pub password_min_length: u32,
+    pub password_min_score: u8,
+    pub app_pin_min_length: u32,
+}
+
+/// The rules the core enforces for a new master password and the app PIN.
+#[uniffi::export]
+pub fn security_rules() -> SecurityRules {
+    SecurityRules {
+        password_min_length: PASSWORD_MIN_LENGTH,
+        password_min_score: PASSWORD_MIN_SCORE,
+        app_pin_min_length: super::quick::MIN_PIN_LEN as u32,
+    }
+}
+
+/// A new master password: long and strong enough (see [`SecurityRules`]).
+pub(crate) fn check_master_password(password: &str) -> Result<()> {
+    if (password.chars().count() as u32) < PASSWORD_MIN_LENGTH {
+        return Err(GhulError::InvalidInput { msg: PASSWORD_TOO_SHORT.into() });
+    }
+    if password_strength(password.to_owned()).score < PASSWORD_MIN_SCORE {
+        return Err(GhulError::InvalidInput { msg: PASSWORD_TOO_WEAK.into() });
+    }
+    Ok(())
+}
+
 #[derive(uniffi::Record, Clone, Debug)]
 pub struct KdfChoice {
     pub memory_kib: u32,

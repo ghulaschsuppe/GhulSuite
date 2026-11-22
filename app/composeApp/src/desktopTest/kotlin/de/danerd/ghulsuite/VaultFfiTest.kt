@@ -5,6 +5,7 @@ import de.danerd.ghulsuite.coretest.FactorProof
 
 import de.danerd.ghulsuite.coretest.CalCalendar
 import de.danerd.ghulsuite.coretest.EntryData
+import de.danerd.ghulsuite.coretest.EntryPlacement
 import de.danerd.ghulsuite.coretest.FidoListener
 import de.danerd.ghulsuite.coretest.FidoStatus
 import de.danerd.ghulsuite.coretest.FieldData
@@ -40,7 +41,7 @@ class VaultFfiTest {
         GhulSuite(localStorage(File(dir, "suite").absolutePath), File(dir, "local").absolutePath)
 
     private fun options(keyfile: ByteArray?) = SetupOptions(
-        password = "Master Passwort!",
+        password = "Gruener Kaktus singt 1987!",
         keyfile = keyfile,
         keyLabel = "Key",
         keyfileLabel = "USB-Stick",
@@ -57,7 +58,7 @@ class VaultFfiTest {
             FieldData("password", FieldValue.Secret("geheim")),
             FieldData("urls", FieldValue.Items(listOf("https://example.org"))),
         ),
-        emptyList(), null, 0, 0uL,
+        null, 0, 0uL,
     )
 
     @Test
@@ -79,28 +80,28 @@ class VaultFfiTest {
 
             s.lock()
             assertFailsWith<GhulException.Locked> { s.listVaults() }
-            assertFailsWith<GhulException.SecurityKeyRequired> { s.unlock("Master Passwort!", null, null, null, null) }
+            assertFailsWith<GhulException.SecurityKeyRequired> { s.unlock("Gruener Kaktus singt 1987!", null, null, null, null) }
             assertFailsWith<GhulException.WrongPassword> { s.unlock("falsch", key, listener, "1234", null) }
-            s.unlock("Master Passwort!", key, listener, "1234", null)
+            s.unlock("Gruener Kaktus singt 1987!", key, listener, "1234", null)
             assertTrue(s.getEntry(arbeit, id).fields.contains(FieldData("password", FieldValue.Secret("geheim"))))
             assertEquals("Arbeit", s.listEntries(VaultKind.PASS, null).single().vaultName)
 
             // A key file as additional second factor; removing it later changes nothing else.
             val kf = generateKeyfile()
-            s.addKeyfile(FactorProof("Master Passwort!", "1234", null), key, listener, kf, "USB-Stick")
+            s.addKeyfile(FactorProof("Gruener Kaktus singt 1987!", "1234", null), key, listener, kf, "USB-Stick")
             s.lock()
-            s.unlock("Master Passwort!", null, null, null, kf)
+            s.unlock("Gruener Kaktus singt 1987!", null, null, null, kf)
             // The key file is the key's backup: it cannot go while the key is there alone.
             val kfSlot = s.slots().first { it.kind == SlotKind.KEYFILE }
             assertFailsWith<GhulException.BackupFactorRequired> {
-                s.removeSlot(FactorProof("Master Passwort!", null, kf), null, null, kfSlot.slotId)
+                s.removeSlot(FactorProof("Gruener Kaktus singt 1987!", null, kf), null, null, kfSlot.slotId)
             }
             // The key may go (the key file alone needs no backup); then the key file is the last factor.
             val keySlot = s.slots().first { it.kind == SlotKind.SECURITY_KEY }
-            s.removeSlot(FactorProof("Master Passwort!", null, kf), null, null, keySlot.slotId)
-            assertFailsWith<GhulException.LastFactor> { s.removeSlot(FactorProof("Master Passwort!", null, kf), null, null, kfSlot.slotId) }
+            s.removeSlot(FactorProof("Gruener Kaktus singt 1987!", null, kf), null, null, keySlot.slotId)
+            assertFailsWith<GhulException.LastFactor> { s.removeSlot(FactorProof("Gruener Kaktus singt 1987!", null, kf), null, null, kfSlot.slotId) }
             s.lock()
-            s.unlockWithRecoveryCode(setup.recoveryCode!!, "Neues Passwort!")
+            s.unlockWithRecoveryCode(setup.recoveryCode!!, "Blaue Wolke tanzt 2031!")
             assertEquals(1, s.totpCodes(59uL).size)
         } finally {
             dir.deleteRecursively()
@@ -166,19 +167,76 @@ class VaultFfiTest {
             assertEquals(0u, s.protection().securityKeys)
             assertEquals(1u, s.protection().keyfiles)
             s.lock()
-            assertFailsWith<GhulException.KeyfileRequired> { s.unlock("Master Passwort!", null, null, null, null) }
+            assertFailsWith<GhulException.KeyfileRequired> { s.unlock("Gruener Kaktus singt 1987!", null, null, null, null) }
             assertFailsWith<GhulException.WrongKeyfile> {
-                s.unlock("Master Passwort!", null, null, null, generateKeyfile())
+                s.unlock("Gruener Kaktus singt 1987!", null, null, null, generateKeyfile())
             }
-            s.unlock("Master Passwort!", null, null, null, kf)
+            s.unlock("Gruener Kaktus singt 1987!", null, null, null, kf)
             val key = mockAuthenticator("1234")
-            s.addSecurityKey(FactorProof("Master Passwort!", null, kf), null, key, listener, "1234", "Key")
+            s.addSecurityKey(FactorProof("Gruener Kaktus singt 1987!", null, kf), null, key, listener, "1234", "Key")
             s.lock()
-            s.unlock("Master Passwort!", key, listener, "1234", null)
+            s.unlock("Gruener Kaktus singt 1987!", key, listener, "1234", null)
             s.lock()
-            s.unlock("Master Passwort!", null, null, null, kf)
+            s.unlock("Gruener Kaktus singt 1987!", null, null, null, kf)
             s.lock()
-            s.unlockWithRecoveryCode(setup.recoveryCode!!, "Noch ein Passwort")
+            s.unlockWithRecoveryCode(setup.recoveryCode!!, "Noch ein Kaktus 5150 singt!")
+        } finally {
+            dir.deleteRecursively()
+        }
+    }
+
+    /**
+     * H8: what the app sends when an entry is edited (no tags and folder, the editor does not show
+     * them) keeps the tags and folder an import gave it.
+     */
+    @Test
+    fun anEditKeepsTagsAndFolder() {
+        val dir = Files.createTempDirectory("ghul-placement").toFile()
+        try {
+            val kf = generateKeyfile()
+            val s = suite(dir)
+            s.create(options(kf), null, null, null)
+            val privat = s.listVaults().first { it.name == "Privat" }.id
+            val imported = login("Codeberg").copy(placement = EntryPlacement(listOf("Arbeit"), "Git"))
+            val id = s.saveEntry(privat, imported)
+            // As CoreVaultBackend.saveEntry sends it.
+            s.saveEntry(privat, login("Codeberg neu").copy(id = id, placement = null))
+            val e = s.getEntry(privat, id)
+            assertEquals(EntryPlacement(listOf("Arbeit"), "Git"), e.placement)
+            assertTrue(e.fields.any { it.name == "title" && it.value == FieldValue.Text("Codeberg neu") })
+        } finally {
+            dir.deleteRecursively()
+        }
+    }
+
+    /**
+     * H11, the way out the save dialog names: the entries of a vault handed on as a separate
+     * vault before the newer state (with a changed protection) is opened come back into it with
+     * that vault's own password and key file. A plain export of the same vault does not.
+     */
+    @Test
+    fun aVaultExportedBeforeAProtectionChangeCanBeTakenBack() {
+        val dir = Files.createTempDirectory("ghul-h11").toFile()
+        try {
+            val kf = generateKeyfile()
+            val s = suite(dir)
+            s.create(options(kf), null, null, null)
+            val privat = s.listVaults().first { it.name == "Privat" }.id
+            s.saveEntry(privat, login("Nur auf diesem Gerät"))
+            // "Share as separate vault": its own password and key file, new ids.
+            val rescueKf = generateKeyfile()
+            val shared = s.shareAsVault(
+                ShareVaultOptions(privat, emptyList(), "Gerettet", FactorProof("Gruener Kaktus singt 1987!", null, kf), "Rettungs-Tresor 1357 bleibt!", rescueKf, "Key", "Datei", "Blatt"),
+                null, null, null, null,
+            )
+            // A plain export of the same vault cannot come back: that vault is there already.
+            val exported = s.exportVault(privat)
+            // The protection changes (as the newer file from the other device would bring).
+            s.changePassword(FactorProof("Gruener Kaktus singt 1987!", null, kf), null, null, "Ein ganz neues Passwort 2468!")
+            assertFailsWith<GhulException> { s.adoptVault(exported, "Alt", "Gruener Kaktus singt 1987!", null, null, null, kf) }
+            val back = s.adoptVault(shared.data, "Gerettet", "Rettungs-Tresor 1357 bleibt!", null, null, null, rescueKf)
+            val titles = s.listEntries(VaultKind.PASS, back).map { it.title }
+            assertTrue("Nur auf diesem Gerät" in titles, titles.toString())
         } finally {
             dir.deleteRecursively()
         }
@@ -200,7 +258,7 @@ class VaultFfiTest {
 
             val t = suite(File(dir, "single"))
             assertFailsWith<GhulException.WrongPassword> { t.openSingleVault(file, "falsch", null, null, null, kf) }
-            assertEquals(VaultKind.PASS, t.openSingleVault(file, "Master Passwort!", null, null, null, kf))
+            assertEquals(VaultKind.PASS, t.openSingleVault(file, "Gruener Kaktus singt 1987!", null, null, null, kf))
             assertTrue(t.isSingle())
             assertEquals(1, t.listVaults().size)
             t.saveEntry(t.listVaults().single().id, login("Neu"))
@@ -208,21 +266,28 @@ class VaultFfiTest {
             val back = t.singleVaultFile()
             t.singleSaved(back.change)
             val again = suite(File(dir, "again"))
-            again.openSingleVault(back.data, "Master Passwort!", null, null, null, kf)
+            again.openSingleVault(back.data, "Gruener Kaktus singt 1987!", null, null, null, kf)
             assertEquals(setOf("Bank", "Codeberg", "Neu"), again.listEntries(VaultKind.PASS, null).map { it.title }.toSet())
 
             // Handed on: its own password and key file; the own ones do not open it.
-            s.unlock("Master Passwort!", null, null, null, kf)
+            s.unlock("Gruener Kaktus singt 1987!", null, null, null, kf)
             val newKf = generateKeyfile()
             val shared = s.shareAsVault(
-                ShareVaultOptions(privat, listOf(a), "Für Anna", "Master Passwort!", "ein neues Passwort", newKf, "Key", "Datei", "Blatt"),
-                null, null, null,
+                ShareVaultOptions(privat, listOf(a), "Für Anna", FactorProof("Gruener Kaktus singt 1987!", null, kf), "Ein Vogel zaehlt 7 Sterne!", newKf, "Key", "Datei", "Blatt"),
+                null, null, null, null,
             )
+            // M15: the password alone does not hand anything on.
+            assertFailsWith<GhulException> {
+                s.shareAsVault(
+                    ShareVaultOptions(privat, listOf(a), "Für Anna", FactorProof("Gruener Kaktus singt 1987!", null, null), "Ein Vogel zaehlt 7 Sterne!", generateKeyfile(), "Key", "Datei", "Blatt"),
+                    null, null, null, null,
+                )
+            }
             assertEquals(VaultKind.PASS, shared.kind)
             assertEquals(11, shared.recoveryCode.split('-').size)
             val r = suite(File(dir, "anna"))
-            assertFailsWith<GhulException> { r.openSingleVault(shared.data, "Master Passwort!", null, null, null, kf) }
-            r.openSingleVault(shared.data, "ein neues Passwort", null, null, null, newKf)
+            assertFailsWith<GhulException> { r.openSingleVault(shared.data, "Gruener Kaktus singt 1987!", null, null, null, kf) }
+            r.openSingleVault(shared.data, "Ein Vogel zaehlt 7 Sterne!", null, null, null, newKf)
             assertEquals(listOf("Codeberg"), r.listEntries(VaultKind.PASS, null).map { it.title })
         } finally {
             dir.deleteRecursively()

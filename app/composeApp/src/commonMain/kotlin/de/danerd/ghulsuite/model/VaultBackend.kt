@@ -49,8 +49,27 @@ interface VaultBackend {
     /** Which quick unlock methods can be used right now (not expired, not reset by a reboot). */
     fun quickUnlockReady(): QuickUnlockReady
     /** [password]: the master password (who finds the app unlocked must not give himself lasting access). */
-    suspend fun enableBiometricUnlock(password: String)
-    suspend fun enablePinUnlock(password: String, pin: String)
+    /**
+     * Whether [password] is the master password of the open suite (M13, M14: asked before a step
+     * that weakens the protection or shows a secret). Changes nothing.
+     */
+    suspend fun verifyPassword(password: String): Boolean = false
+    /**
+     * H6: fingerprint or app PIN unlock only with both factors of now ([proof]; right after
+     * opening with the recovery code the new master password alone). [hours] is the validity,
+     * fixed in the quick unlock file (0: no expiry); a key is touched through [onTouchNeeded].
+     */
+    suspend fun enableBiometricUnlock(proof: FactorProofUi, hours: Int, onTouchNeeded: () -> Unit = {})
+    suspend fun enablePinUnlock(proof: FactorProofUi, pin: String, hours: Int, onTouchNeeded: () -> Unit = {})
+    /**
+     * H3: the open suite was opened with the recovery code (until it locks): a change of the
+     * protection takes the new master password alone.
+     */
+    fun openedWithRecoveryCode(): Boolean = false
+    /** The folder of this app's data on this computer (Windows; shown as the last way out of H5). */
+    val dataFolder: String get() = ""
+    /** M42: the rules of the core for master passwords and app PINs. */
+    fun securityRules(): SecurityRulesUi = SecurityRulesUi()
     fun disableQuickUnlock()
     fun disableQuickUnlockMethod(bio: Boolean)
     suspend fun unlockWithBiometric()
@@ -129,10 +148,14 @@ interface VaultBackend {
         totpsFromLogins: Boolean,
         keep: KeepSkippedUi? = null,
     ): ImportResultUi
-    /** Unencrypted export of one vault (CSV or otpauth links); needs the master password. */
-    suspend fun exportPlain(vaultId: String, password: String): ByteArray
+    /**
+     * Unencrypted export of one vault (CSV or otpauth links); needs the master password.
+     * [spreadsheetSafe] (M29): cells that a spreadsheet would run as a formula get an apostrophe
+     * (other password managers would take it over into the password).
+     */
+    suspend fun exportPlain(vaultId: String, password: String, spreadsheetSafe: Boolean = false): ByteArray
     /** Some entries as unencrypted CSV (or otpauth links), only with the master password. */
-    suspend fun exportEntries(vaultId: String, ids: List<String>, password: String): ByteArray = throw UnsupportedOperationException()
+    suspend fun exportEntries(vaultId: String, ids: List<String>, password: String, spreadsheetSafe: Boolean = false): ByteArray = throw UnsupportedOperationException()
 
     // --- Tools
     fun generatePassword(options: PasswordOptionsUi): String
@@ -150,7 +173,7 @@ interface VaultBackend {
     fun entryTotp(secret: String, nowSeconds: Long): TotpNowUi? = null
     fun generatePassphrase(words: Int, separator: String, capitalize: Boolean, number: Boolean): String = ""
     /** GhulAuth: account as otpauth link (QR export). */
-    suspend fun totpUri(vaultId: String, id: String): String = ""
+    suspend fun totpUri(vaultId: String, id: String, password: String): String = ""
     // --- The suite file (.ghlzip): opened into the working copy, saved from it. Read and written
     // as a stream (it can be over a gigabyte); [onProgress] gets bytes done and in all (0: not known).
     /** What a suite file needs to be opened (password plus key or key file); reads only its header. */
@@ -174,6 +197,11 @@ interface VaultBackend {
     fun archiveCancel() {}
     /** Replaces the working copy with the checked file and opens it. */
     suspend fun archiveAccept() {}
+    /**
+     * H5: the checked file holds another suite than the one on this device: replacing it needs
+     * the proof of the one here, both factors ([proof]) or its recovery code ([code]).
+     */
+    suspend fun archiveAcceptReplacing(proof: FactorProofUi?, code: String?, onTouchNeeded: () -> Unit = {}) {}
     /** The working copy has changes that are not in a file yet. */
     fun archiveUnsaved(): Boolean = false
     /** When the first change not in a file yet was made (ms since 1970); 0: nothing unsaved. Also while locked. */
@@ -197,8 +225,11 @@ interface VaultBackend {
      * file and this device's settings that name its vaults or entries go, and the core removes
      * every vault file, the documents of GhulDocs and the suite file. Suite files elsewhere are
      * not touched.
+     *
+     * H5: only with the proof of that suite (also while it is locked): both factors ([proof]) or
+     * its recovery code ([code]).
      */
-    suspend fun deleteSuite()
+    suspend fun deleteSuite(proof: FactorProofUi?, code: String?, onTouchNeeded: () -> Unit = {})
     /** The suite file used last on this device (opened or saved), if any. */
     fun suiteFile(): SuiteFileRef? = null
     fun setSuiteFile(ref: SuiteFileRef?) {}
@@ -281,6 +312,16 @@ interface VaultBackend {
         return shareToApps(name, mime, sink.bytes())
     }
 
+    /**
+     * Whether [shareToApps] refuses a file of this name because the system would run, install or
+     * mount it instead of showing it (programs, scripts, shortcuts, packages; H4). Windows adds
+     * the endings of PATHEXT.
+     */
+    fun refusesToOpen(name: String): Boolean = de.danerd.ghulsuite.ui.isRunnableFile(name)
+
+    /** Whether copies for other apps land on this PC although the app runs portable from a stick (M16). */
+    val openCopiesOnThisPc: Boolean get() = false
+
     /** Whether [shareToApps] lets the user pick another app to send the file with (Android). */
     val canShareToApps: Boolean get() = false
     /** Whether the system shows notifications of the app (Android 13+ asks once; reminders need them). */
@@ -329,6 +370,20 @@ data class FolderRef(val uri: String, val name: String)
 /** A suite file the app may read and write again (Android: a document it keeps access to, Windows: a path). */
 data class SuiteFileRef(val id: String, val name: String)
 
+/**
+ * Given as both numbers to the progress of [VaultBackend.archiveSave] (N3): the new file is in
+ * place and checked, the file it replaced is now overwritten with zeros (after a change of the
+ * protection; on a stick this can take minutes).
+ */
+const val WIPING_OLD_FILE = -2L
+
+/**
+ * N1: errors of a quick unlock that say nothing against the quick unlock itself (the storage:
+ * an earlier opening of a suite file that could not be finished, a full disk). It stays set up
+ * for the next try instead of being switched off.
+ */
+val QUICK_UNLOCK_KEPT_ON: Set<VaultErrorKind> = setOf(VaultErrorKind.STORAGE, VaultErrorKind.NO_SPACE)
+
 /** See [VaultBackend.safeSave]. */
 enum class SafeSaveUi { SAFE, FOLDER_NEEDED, OVERWRITES }
 
@@ -351,6 +406,9 @@ data class ArchiveCheckUi(
  * changed elsewhere; overwriting would undo the change.
  */
 enum class ArchiveTargetUi { NEW, SAME, CHANGED_ELSEWHERE, OTHER_SUITE, OTHER_PROTECTION }
+
+/** M42: the rules of the core (the defaults are its values). */
+data class SecurityRulesUi(val passwordMinLength: Int = 10, val passwordMinScore: Int = 3, val appPinMinLength: Int = 6)
 
 /** Both factors of now, before a change of the protection: the master password plus the PIN of a key ([pin]) or a key file. */
 class FactorProofUi(val password: String, val pin: String?, val keyfile: ByteArray?)
@@ -410,6 +468,8 @@ interface ByteSink {
     fun close()
     /** Removes what was written (a cancelled or failed write leaves no half file). */
     fun discard() {}
+    /** Free bytes where it is written, null where not known (H12: a full storage without an error code). */
+    fun freeBytes(): Long? = null
 }
 
 /** The areas, in the order they are named everywhere: passwords, 2FA, documents, calendar. */
@@ -470,7 +530,8 @@ class ShareVaultUi(
     val vaultId: String,
     val ids: List<String>,
     val name: String,
-    val masterPassword: String,
+    /** M15: both factors of this suite. */
+    val proof: FactorProofUi,
     val password: String,
     /** A new key file; null with a security key. */
     val keyfile: ByteArray?,
@@ -519,7 +580,12 @@ enum class SingleSaveUi {
 /** A new vault file of picked entries and its recovery code. */
 class SharedVaultUi(val kind: VaultKindUi, val data: ByteArray, val recoveryCode: String)
 
-data class QuickUnlockReady(val biometric: Boolean, val pin: Boolean) {
+data class QuickUnlockReady(
+    val biometric: Boolean,
+    val pin: Boolean,
+    /** Switched on, but from an older version: it must be set up again (with both factors). */
+    val needsSetup: Boolean = false,
+) {
     val any: Boolean get() = biometric || pin
 }
 
@@ -689,6 +755,8 @@ enum class VaultErrorKind {
     IMPORT_UNKNOWN,
     QUICK_UNAVAILABLE,
     QUICK_EXPIRED,
+    /** The quick unlock file of an older version (validity not in the file): set it up again. */
+    QUICK_OUTDATED,
     QUICK_INVALID,
     BIOMETRIC_CANCELLED,
     /** Too many failed attempts: the system blocks biometrics for a while (or until the device PIN). */
@@ -715,6 +783,10 @@ enum class VaultErrorKind {
     NOT_FOUND,
     /** GhulDocs holds as much as it may: [VaultException.detail] is "used|limit" in bytes. */
     DOCS_LIMIT,
+    /** H5: the deletion of the suite began and stopped part way; deleting again removes the rest. */
+    DELETE_INCOMPLETE,
+    /** H12: not enough free space; detail `free|needed` (bytes). */
+    NO_SPACE,
     OTHER,
 }
 
@@ -722,3 +794,11 @@ class VaultException(val kind: VaultErrorKind, val detail: String = "", val retr
     Exception("$kind: $detail")
 
 private val NOT_WAITING = kotlinx.coroutines.flow.MutableStateFlow(false)
+
+/**
+ * The auto-lock time in effect: right after opening with the recovery code at least 5 minutes
+ * (H3: the password alone repairs the protection only until the lock; finding a new key takes a
+ * while). Screen off and the instant lock still lock at once.
+ */
+fun VaultBackend.autoLockSecondsNow(): Int =
+    if (settings.autoLockSeconds < 300 && runCatching { openedWithRecoveryCode() }.getOrDefault(false)) 300 else settings.autoLockSeconds

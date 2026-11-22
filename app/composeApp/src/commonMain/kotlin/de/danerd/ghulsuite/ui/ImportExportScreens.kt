@@ -210,9 +210,11 @@ fun ExportScreen(state: AppState, padding: PaddingValues) {
     val vaults = state.vaults.filter { it.available && it.kind != VaultKindUi.DOCS }
     var target by remember { mutableStateOf(vaults.firstOrNull()?.id) }
     var password by remember { mutableStateOf("") }
+    // M29: off by default (another password manager takes the file as it is).
+    var spreadsheetSafe by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     val saved = stringResource(Res.string.msg_exported_plain)
-    val save = rememberSaveFile { ok -> if (ok) state.message(saved) }
+    val save = rememberSaveFile { state.reportSaveFile(it, saved) }
 
     Column(Modifier.padding(padding)) {
         ScreenColumn {
@@ -229,12 +231,16 @@ fun ExportScreen(state: AppState, padding: PaddingValues) {
                         VaultKindUi.CAL, VaultKindUi.DOCS -> Res.string.export_format_ics
                     }))
                 }
+                if (v?.kind == VaultKindUi.PASS) {
+                    SwitchRow(stringResource(Res.string.export_spreadsheet_safe), spreadsheetSafe) { spreadsheetSafe = it }
+                    Hint(stringResource(Res.string.export_spreadsheet_safe_hint))
+                }
                 SecretTextField(password, { password = it; error = null }, stringResource(Res.string.l_master_password))
                 ErrorText(error)
                 Button(
                     onClick = {
                         val vault = v ?: return@Button
-                        state.run(onError = { error = it }, block = { backend.exportPlain(vault.id, password) }) { data ->
+                        state.run(onError = { error = it }, block = { backend.exportPlain(vault.id, password, spreadsheetSafe && vault.kind == VaultKindUi.PASS) }) { data ->
                             password = ""
                             val name = vault.name.ifBlank { "ghulsuite" }
                             save(when (vault.kind) {

@@ -8,6 +8,8 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -21,6 +23,7 @@ import androidx.compose.ui.unit.dp
 import de.danerd.ghulsuite.model.ArchiveTargetInfoUi
 import de.danerd.ghulsuite.model.ArchiveTargetUi
 import de.danerd.ghulsuite.model.SafeSaveUi
+import de.danerd.ghulsuite.model.WIPING_OLD_FILE
 import de.danerd.ghulsuite.model.SuiteFileRef
 import de.danerd.ghulsuite.resources.Res
 import de.danerd.ghulsuite.resources.*
@@ -64,6 +67,11 @@ val AppState.saveJob: BgJob? get() = jobs.list.firstOrNull { it.kind == JobKind.
 fun AppState.checkAndSave(target: SuiteFileRef, force: Boolean = false, created: Boolean = false) {
     // One at a time (a second tap while the file is checked is dropped).
     if (saveJob != null || saveStep == SaveStep.Checking) return
+    // M7: the update is being handed to the installer, which ends the app: no save starts now.
+    if (updateInstalling) {
+        scope.launch { message(str(Res.string.upd_installing)) }
+        return
+    }
     saveStep = SaveStep.Checking
     scope.launch {
         val info = if (force) {
@@ -111,8 +119,12 @@ fun AppState.startSaveJob(target: SuiteFileRef, created: Boolean) {
     ) { job ->
         try {
             val ok = backend.archiveSave(target, deviceInfo(), created) { done, total ->
-                job.bytes = done
-                job.bytesTotal = total
+                if (total == WIPING_OLD_FILE) {
+                    job.wipingOld = true
+                } else {
+                    job.bytes = done
+                    job.bytesTotal = total
+                }
             }
             if (!ok) throw JobFailed(str(Res.string.file_not_written))
             backend.setSuiteFile(target)
@@ -176,6 +188,8 @@ fun SaveSuiteDialog(state: AppState) {
     var shared by androidx.compose.runtime.remember { mutableStateOf(0) }
     val grant = rememberGrantFolder { picked -> if (picked) shared++ }
     val safe = androidx.compose.runtime.remember(target, shared) { target?.let { backend.safeSave(it) } }
+    // M1: where the file can only be written over, "Save" asks first (the only file at stake).
+    var riskAsked by androidx.compose.runtime.remember(target) { mutableStateOf(false) }
     val dismiss = { state.closeSaveDialog() }
     GhulSheet(onDismissRequest = dismiss, title = stringResource(
         when (step) {
@@ -187,7 +201,8 @@ fun SaveSuiteDialog(state: AppState) {
         when (step) {
             SaveStep.Ask -> {
                 if (target == null) {
-                    Text(stringResource(Res.string.save_no_file))
+                    // Opened with the code from a file: that file is no place to save to (M11).
+                    Text(stringResource(if (state.recoveredOpen) Res.string.file_opened_by_code else Res.string.save_no_file))
                 } else {
                     Text(stringResource(Res.string.save_ask))
                     Hint(stringResource(Res.string.save_file, target.name))
@@ -195,21 +210,42 @@ fun SaveSuiteDialog(state: AppState) {
                 val at = backend.archiveSavedAt()
                 Hint(if (at > 0) stringResource(Res.string.save_last, formatDateTime(at)) else stringResource(Res.string.save_never))
                 Hint(stringResource(Res.string.save_hint))
+                val unsafe = target != null && (safe == SafeSaveUi.FOLDER_NEEDED || safe == SafeSaveUi.OVERWRITES)
                 when (safe) {
                     SafeSaveUi.FOLDER_NEEDED -> {
                         // A folder was chosen, and still not safe: Android does not share every
                         // folder (Download, the top of the storage or of an SD card), or another one.
-                        Hint(stringResource(if (shared > 0) Res.string.save_safe_folder_refused else Res.string.save_safe_folder))
-                        OutlinedButton(onClick = { target?.let { grant(it.id) } }, modifier = Modifier.fillMaxWidth()) {
+                        Banner(Icons.Filled.Warning, stringResource(if (shared > 0) Res.string.save_safe_folder_refused else Res.string.save_safe_folder))
+                        // The safe way first.
+                        Button(onClick = { target?.let { grant(it.id) } }, modifier = Modifier.fillMaxWidth()) {
                             Text(stringResource(Res.string.save_safe_grant))
                         }
                     }
-                    SafeSaveUi.OVERWRITES -> Hint(stringResource(Res.string.save_overwrites))
+                    SafeSaveUi.OVERWRITES -> Banner(Icons.Filled.Warning, stringResource(Res.string.save_overwrites))
                     else -> {}
                 }
-                if (target != null) {
-                    Button(onClick = { state.checkAndSave(target) }, modifier = Modifier.fillMaxWidth().testTag(SAVE_CONFIRM_TAG)) {
+                if (target != null && unsafe && riskAsked) {
+                    // M1: written over directly, the only file is at stake: said plainly, then
+                    // "Save as" next to it or the overwrite the user chose.
+                    Text(stringResource(Res.string.save_risk_text), color = warnColor())
+                    if (filePickersAvailable) {
+                        Button(onClick = { saveAs(SUITE_FILE_NAME) }, modifier = Modifier.fillMaxWidth()) {
+                            Text(stringResource(Res.string.save_as_new))
+                        }
+                    }
+                    androidx.compose.runtime.CompositionLocalProvider(LocalButtonLook provides ButtonLook.DANGER) {
+                        TextButton(onClick = { state.checkAndSave(target) }, modifier = Modifier.fillMaxWidth().testTag(SAVE_CONFIRM_TAG)) {
+                            Text(stringResource(Res.string.save_overwrite_anyway))
+                        }
+                    }
+                } else if (target != null) {
+                    val saveButton = @Composable {
                         Text(stringResource(Res.string.file_save))
+                    }
+                    if (unsafe) {
+                        OutlinedButton(onClick = { riskAsked = true }, modifier = Modifier.fillMaxWidth().testTag(SAVE_CONFIRM_TAG)) { saveButton() }
+                    } else {
+                        Button(onClick = { state.checkAndSave(target) }, modifier = Modifier.fillMaxWidth().testTag(SAVE_CONFIRM_TAG)) { saveButton() }
                     }
                 }
                 if (filePickersAvailable) {
@@ -242,9 +278,19 @@ fun SaveSuiteDialog(state: AppState) {
                 if (step.info.device.isNotBlank() && step.info.time > 0) {
                     Hint(stringResource(Res.string.file_saved_on, formatDateTime(step.info.time), step.info.device))
                 }
+                // H11: after a change of the protection elsewhere a side file of this state is no
+                // rescue (it keeps the old protection): the way that works is said first.
+                val otherProtection = step.info.target == ArchiveTargetUi.OTHER_PROTECTION
+                if (otherProtection) Banner(Icons.Filled.Warning, stringResource(Res.string.save_protection_way))
                 if (filePickersAvailable) {
-                    Button(onClick = { state.saveStep = SaveStep.Ask; saveAs(SUITE_FILE_NAME) }, modifier = Modifier.fillMaxWidth()) {
-                        Text(stringResource(Res.string.save_keep_mine))
+                    if (otherProtection) {
+                        OutlinedButton(onClick = { state.saveStep = SaveStep.Ask; saveAs(SUITE_FILE_NAME) }, modifier = Modifier.fillMaxWidth()) {
+                            Text(stringResource(Res.string.save_keep_mine_old_protection))
+                        }
+                    } else {
+                        Button(onClick = { state.saveStep = SaveStep.Ask; saveAs(SUITE_FILE_NAME) }, modifier = Modifier.fillMaxWidth()) {
+                            Text(stringResource(Res.string.save_keep_mine))
+                        }
                     }
                 }
                 // A newer protection there is not overwritten from here: that would undo it.
@@ -261,8 +307,14 @@ fun SaveSuiteDialog(state: AppState) {
                 }
             }
             is SaveStep.Saving -> {
-                val p = step.job.progress
-                Text(if (p == null) stringResource(Res.string.save_running) else stringResource(Res.string.save_progress, "${(p * 100).toInt()} %"))
+                val p = step.job.progress.takeUnless { step.job.wipingOld }
+                Text(
+                    when {
+                        step.job.wipingOld -> stringResource(Res.string.save_wiping_old)
+                        p == null -> stringResource(Res.string.save_running)
+                        else -> stringResource(Res.string.save_progress, "${(p * 100).toInt()} %")
+                    },
+                )
                 val bar = Modifier.fillMaxWidth().height(6.dp).clip(RoundedCornerShape(3.dp))
                 if (p == null) {
                     LinearProgressIndicator(bar, color = g.accent, trackColor = g.surface3)
@@ -293,7 +345,17 @@ fun SaveSuiteDialog(state: AppState) {
             is SaveStep.Failed -> {
                 Text(step.text)
                 step.target?.let { t ->
-                    Button(onClick = { state.checkAndSave(t) }, modifier = Modifier.fillMaxWidth()) { Text(stringResource(Res.string.a_retry)) }
+                    // M1: where the file is written over directly, a failed save may have left half a
+                    // file: "Try again" asks again (with "Save as a new file") instead of writing over it.
+                    val unsafeHere = backend.safeSave(t).let { it == SafeSaveUi.FOLDER_NEEDED || it == SafeSaveUi.OVERWRITES }
+                    Button(onClick = {
+                        if (unsafeHere && t == target) {
+                            riskAsked = true
+                            state.saveStep = SaveStep.Ask
+                        } else {
+                            state.checkAndSave(t)
+                        }
+                    }, modifier = Modifier.fillMaxWidth()) { Text(stringResource(Res.string.a_retry)) }
                 }
                 if (filePickersAvailable) {
                     OutlinedButton(onClick = { state.saveStep = SaveStep.Ask; saveAs(step.target?.name ?: SUITE_FILE_NAME) }, modifier = Modifier.fillMaxWidth()) {

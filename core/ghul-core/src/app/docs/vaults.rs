@@ -19,7 +19,6 @@ use std::fs::{self, File};
 use std::io::{BufWriter, Read};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
-use std::time::{Duration, SystemTime};
 
 use rand_core::OsRng;
 use zeroize::Zeroizing;
@@ -44,12 +43,16 @@ use crate::{FidoListener, HidTransport, RP_ID};
 
 /// Folder (in the content root) of content files read from a ZIP and not yet in place.
 const STAGING_DIR: &str = ".staging";
-/// A staging folder older than this was left by an app that ended (it is removed), unless it is
-/// in use (see [`LIVE`]) or kept on purpose ([`KEEP_MARK`]).
-const STAGING_MAX_AGE: Duration = Duration::from_secs(24 * 3600);
 /// A file in a staging folder that must never be tidied (it holds documents that could not be
 /// put back, see `archive`).
 pub(in crate::app) const KEEP_MARK: &str = "KEEP";
+/// The file in the folder the old documents are moved to while a replace of the working copy
+/// runs. Such a folder is removed only by the suite, once its journal is gone.
+pub(in crate::app) const JOURNAL_MARK: &str = "JOURNAL";
+/// The file in a staging folder naming the process that made it (its id).
+const OWNER_FILE: &str = "OWNER";
+/// A staging folder of another app process that may still run is left this long.
+const FOREIGN_MAX_AGE: std::time::Duration = std::time::Duration::from_secs(24 * 3600);
 
 /// The staging folders of this process (by their name, a random id): a check waiting for
 /// `archive_accept` may wait any time, also over a jump of the clock, and its folder must not be
@@ -123,9 +126,13 @@ impl Staging {
         let name = crate::kdf::hex(&crate::app::suite::new_id());
         let dir = root.join(STAGING_DIR).join(&name);
         live().insert(name.clone());
-        let s = Staging { dir, name, files: Mutex::new(Vec::new()) };
-        fs::create_dir_all(&s.dir)?;
-        Ok(s)
+        // Made under a hidden name with its owner inside, then renamed: another process that
+        // tidies never sees it without its owner.
+        let new = root.join(STAGING_DIR).join(format!(".{name}.new"));
+        fs::create_dir_all(&new)?;
+        fs::write(new.join(OWNER_FILE), std::process::id().to_string())?;
+        fs::rename(&new, &dir)?;
+        Ok(Staging { dir, name, files: Mutex::new(Vec::new()) })
     }
 
     /// A content file was staged (complete and checked).
@@ -202,6 +209,11 @@ impl Drop for Staging {
     }
 }
 
+/// The folder of the staging folders in the content root `root`.
+pub(in crate::app) fn staging_root(root: &Path) -> PathBuf {
+    root.join(STAGING_DIR)
+}
+
 /// Removes every content folder of GhulDocs under `root` (`docs-<id>`), the staging folders
 /// (those kept on purpose too) and folders of documents rescued earlier
 /// (`rescued-documents-<id>`): the suite on this device is deleted. Nothing else is touched.
@@ -216,25 +228,87 @@ pub(in crate::app) fn remove_all_contents(root: &Path) -> Result<()> {
     Ok(())
 }
 
-/// Removes staging folders an app left behind when it ended: never one in use by this process,
-/// never one kept on purpose.
+/// Removes staging folders an app left behind when it ended, at once (H12: on a full device the
+/// space is needed now): never one in use by this process, never one kept on purpose (with
+/// [`KEEP_MARK`]: documents that could not be put back, and the folder a replace of the
+/// working copy moves the old documents to, which its journal names). A folder of another
+/// process ([`OWNER_FILE`]) that may still run (Unix: it does; Windows: not known) stays for
+/// [`FOREIGN_MAX_AGE`].
 pub(in crate::app) fn tidy_staging(root: &Path) {
-    let now = SystemTime::now();
     let live = live();
+    let me = std::process::id();
     for e in fs::read_dir(root.join(STAGING_DIR)).into_iter().flatten().flatten() {
         if live.contains(e.file_name().to_string_lossy().as_ref()) || e.path().join(KEEP_MARK).exists() {
             continue;
         }
-        let old = e
-            .metadata()
-            .and_then(|m| m.modified())
-            .ok()
-            .and_then(|t| now.duration_since(t).ok())
-            .is_some_and(|age| age > STAGING_MAX_AGE);
-        if old {
-            let _ = fs::remove_dir_all(e.path());
+        // One being made right now (see `Staging::new`): only a forgotten one, after a while.
+        if e.file_name().to_string_lossy().starts_with('.') {
+            let young = e
+                .metadata()
+                .and_then(|m| m.modified())
+                .ok()
+                .and_then(|t| std::time::SystemTime::now().duration_since(t).ok())
+                .map_or(true, |age| age < std::time::Duration::from_secs(600));
+            if !young {
+                let _ = fs::remove_dir_all(e.path());
+            }
+            continue;
+        }
+        // The old documents of a replace: tidied by the suite once its journal is gone
+        // (`GhulSuite::tidy_asides`), never here.
+        if e.path().join(JOURNAL_MARK).exists() {
+            continue;
+        }
+        let owner = fs::read_to_string(e.path().join(OWNER_FILE)).ok().and_then(|t| t.trim().parse::<u32>().ok());
+        let foreign_running = owner.is_some_and(|pid| pid != me && process_may_run(pid));
+        if foreign_running {
+            let old = e
+                .metadata()
+                .and_then(|m| m.modified())
+                .ok()
+                .and_then(|t| std::time::SystemTime::now().duration_since(t).ok())
+                .is_some_and(|age| age > FOREIGN_MAX_AGE);
+            if !old {
+                continue;
+            }
+        }
+        let _ = fs::remove_dir_all(e.path());
+    }
+}
+
+/// Whether the process `pid` may still run: on Unix asked with signal 0, on Windows through
+/// `OpenProcess` and its exit code; elsewhere taken as yes.
+fn process_may_run(pid: u32) -> bool {
+    #[cfg(unix)]
+    {
+        let Ok(pid) = i32::try_from(pid) else { return false };
+        // SAFETY: signal 0 only checks whether the process exists; nothing is sent.
+        if unsafe { libc::kill(pid, 0) } == 0 {
+            return true;
+        }
+        return std::io::Error::last_os_error().raw_os_error() == Some(libc::EPERM);
+    }
+    #[cfg(windows)]
+    {
+        use windows_sys::Win32::Foundation::{CloseHandle, GetLastError, ERROR_ACCESS_DENIED, STILL_ACTIVE};
+        use windows_sys::Win32::System::Threading::{
+            GetExitCodeProcess, OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION,
+        };
+        // SAFETY: plain Win32 calls; the handle is closed again.
+        unsafe {
+            let h = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid);
+            if h.is_null() {
+                // No such process; a process of another user we may not ask about may run.
+                return GetLastError() == ERROR_ACCESS_DENIED;
+            }
+            let mut code = 0u32;
+            let ok = GetExitCodeProcess(h, &mut code);
+            CloseHandle(h);
+            return ok == 0 || code == STILL_ACTIVE as u32;
         }
     }
+    #[allow(unreachable_code)]
+    true
 }
 
 /// The content files a GhulDocs vault read from a ZIP must come with: from its index,
@@ -245,14 +319,36 @@ pub(in crate::app) struct Expected {
 }
 
 impl Expected {
+    /// For a GhulDocs vault from outside (a package handed on): every limit.
     pub(in crate::app) fn of(c: &UnlockedContainer) -> Result<Self> {
-        if !index::validate(&c.payload.entries, DOCS_LIMIT) {
+        Self::of_entries(&c.payload.entries)
+    }
+
+    /// For a GhulDocs vault of a suite file: without the limits of depth and number of folders
+    /// (see `index::validate_own`).
+    pub(in crate::app) fn of_suite_file(c: &UnlockedContainer) -> Result<Self> {
+        Self::check(&c.payload.entries, false)
+    }
+
+    fn of_entries(entries: &[Entry]) -> Result<Self> {
+        Self::check(entries, true)
+    }
+
+    fn check(entries: &[Entry], limits: bool) -> Result<Self> {
+        let valid =
+            if limits { index::validate(entries, DOCS_LIMIT) } else { index::validate_own(entries, DOCS_LIMIT) };
+        // M27: a deleted entry has no content (a tombstone keeps nothing): one that still names
+        // a content file would bring it in past the limit, which only counts live items.
+        if !valid
+            || entries.iter().any(|e| e.deleted && (index::content(e).is_some() || index::blob(e).is_some()))
+            || Usage::of(entries).used > DOCS_LIMIT
+            || Usage::of(entries).files > super::DOCS_MAX_FILES
+        {
             return Err(GhulError::Corrupted { msg: "the index of a GhulDocs vault is invalid".into() });
         }
-        let files = c
-            .payload
-            .entries
+        let files = entries
             .iter()
+            .filter(|e| index::is_item(e))
             .filter_map(index::content)
             .map(|x| (x.blob, (blob::file_len(x.size), x.sha256)))
             .collect();
@@ -261,6 +357,11 @@ impl Expected {
 
     pub(in crate::app) fn complete(&self) -> bool {
         self.seen.len() == self.files.len()
+    }
+
+    /// The bytes of all content files expected (what staging them needs on the disk).
+    pub(in crate::app) fn bytes(&self) -> u64 {
+        self.files.values().map(|(len, _)| *len).sum()
     }
 }
 
@@ -294,7 +395,7 @@ pub(in crate::app) fn stage_entry<R: Read>(
 
 /// The first entry of a suite file or GhulDocs package: its name and container (not opened).
 fn read_first(z: &mut ZipReader<SourceReader>) -> Result<(String, LockedContainer)> {
-    let e = z.next_entry().map_err(zip_error)?.ok_or_else(not_a_suite_file)?;
+    let e = z.next_entry().map_err(crate::app::archive::first_entry_error)?.ok_or_else(not_a_suite_file)?;
     let (data, _) = read_container(z, &e)?;
     let l = crate::app::archive::parse_first(&data)?;
     Ok((e.name, l))
@@ -406,8 +507,11 @@ pub struct ShareDocsOptions {
     pub ids: Vec<String>,
     /// Name of the new vault.
     pub name: String,
-    /// The own master password, asked again.
-    pub master_password: String,
+    /// Both factors of this suite (M15): whoever finds the device unlocked and knows the
+    /// password must not carry entries off under a protection of their own. A security key of
+    /// now is touched through `proof_transport` (before the new one); right after
+    /// `confirm_factors` the password alone.
+    pub proof: crate::app::suite::FactorProof,
     /// Password of the new vault.
     pub password: String,
     /// Key file of the new vault (from `generate_keyfile`); `None` with a security key.
@@ -482,9 +586,11 @@ impl GhulSuite {
     /// `options.password` plus a new key file (`options.keyfile`) or a security key (`transport`
     /// and `pin`, two touches), and a new recovery code; written into `sink` as a GhulDocs package (`.ghldocs`) with
     /// its content files (copied as they are: the documents' keys are in the new index).
+    #[allow(clippy::too_many_arguments)]
     pub fn docs_share_vault(
         &self,
         options: ShareDocsOptions,
+        proof_transport: Option<Arc<dyn HidTransport>>,
         transport: Option<Arc<dyn HidTransport>>,
         listener: Option<Arc<dyn FidoListener>>,
         pin: Option<String>,
@@ -496,17 +602,15 @@ impl GhulSuite {
         if options.name.trim().is_empty() {
             return Err(GhulError::InvalidInput { msg: "name required".into() });
         }
-        if password.chars().count() < 8 {
-            return Err(GhulError::InvalidInput { msg: "password too short".into() });
-        }
+        // M42: the master password of the new vault follows the same rules as the own one.
+        crate::app::tools::check_master_password(&password)?;
         let keyfile = parse_keyfile(options.keyfile.clone())?;
         if keyfile.is_some() == pin.is_some() {
             return Err(GhulError::InvalidInput { msg: "either a key file or a security key".into() });
         }
         let ids: Vec<Id> = options.ids.iter().map(|i| super::parse_id(i)).collect::<Result<_>>()?;
-        if !self.verify_password(options.master_password.clone())? {
-            return Err(GhulError::WrongPassword);
-        }
+        // Refused before the new key is touched.
+        self.require_factors(&options.proof, proof_transport.as_ref(), listener.as_ref())?;
         let now = now_ms();
         // Copied first: the key may take a while to be touched, the suite is not held meanwhile.
         let _copy = self.content_copy();
@@ -617,6 +721,11 @@ impl GhulSuite {
             c.payload.entries.iter_mut().for_each(zeroize::Zeroize::zeroize);
             return Err(e);
         }
+        // H12: room for its documents first.
+        if let Err(e) = crate::app::error::check_free_space(&root, Usage::of(&c.payload.entries).stored) {
+            c.payload.entries.iter_mut().for_each(zeroize::Zeroize::zeroize);
+            return Err(e);
+        }
         let staging = Staging::new(&root)?;
         if let Err(e) = stage_docs_rest(&mut z, &entry, &c, &staging) {
             c.payload.entries.iter_mut().for_each(zeroize::Zeroize::zeroize);
@@ -650,6 +759,7 @@ impl GhulSuite {
         keyfile: Option<Vec<u8>>,
         progress: Option<Arc<dyn ArchiveProgress>>,
     ) -> Result<String> {
+        let gen = self.lock_gen_now();
         let password = Zeroizing::new(password);
         let pin = pin.map(Zeroizing::new);
         if self.exists()? {
@@ -668,11 +778,12 @@ impl GhulSuite {
         )?;
         let pk = PasswordKey::derive(&password, &locked.header().kdf)?;
         let vault = locked.unlock(&pk, &s)?;
+        crate::app::error::check_free_space(&root, Usage::of(&vault.payload.entries).stored)?;
         let staging = Staging::new(&root)?;
         stage_docs_rest(&mut z, &entry, &vault, &staging)?;
         let vid = crate::kdf::hex(&vault.container_id());
         staging.move_vault(&vid, &root)?;
-        self.start_single(vault, pk)?;
+        self.start_single(vault, pk, gen)?;
         Ok(vid)
     }
 
@@ -698,5 +809,39 @@ impl GhulSuite {
         })?;
         let (size, sha256) = write_zip(&[(file, data.to_vec())], &contents, sink, progress)?;
         Ok(SingleDocsWritten { change, size, sha256 })
+    }
+}
+
+#[cfg(test)]
+mod expected_tests {
+    use super::*;
+    use crate::vault::Field;
+
+    fn file(id: u8, size: i64) -> Entry {
+        let mut e = Entry::new([id; 16], index::FILE, 1);
+        e.fields.insert(index::NAME.into(), Field::Text(format!("d{id}.pdf")));
+        e.fields.insert(index::SIZE.into(), Field::Int(size));
+        e.fields.insert(index::KEY.into(), Field::Bytes(vec![id; 32]));
+        e.fields.insert(index::BLOB.into(), Field::Bytes(vec![id; 16]));
+        e.fields.insert(index::SHA256.into(), Field::Bytes(vec![id; 32]));
+        e.fields.insert(index::CRC32.into(), Field::Int(1));
+        e
+    }
+
+    /// M27: only live documents are expected (and counted against the limit); a deleted entry
+    /// that still names a content file is refused, as is more than a vault may hold.
+    #[test]
+    fn deleted_entries_bring_no_content() {
+        let ok = Expected::of_entries(&[file(1, 10), file(2, 20)]).unwrap();
+        assert_eq!(ok.files.len(), 2);
+        let mut gone = file(3, 30);
+        gone.make_tombstone(2);
+        assert_eq!(Expected::of_entries(&[file(1, 10), gone]).unwrap().files.len(), 1, "a tombstone expects nothing");
+        let mut sneaky = file(4, 900_000_000);
+        sneaky.deleted = true;
+        let r = Expected::of_entries(&[file(1, 10), sneaky]);
+        assert!(matches!(&r, Err(GhulError::Corrupted { msg }) if msg == "the index of a GhulDocs vault is invalid"));
+        let big: Vec<Entry> = (1..=3).map(|i| file(i, 400_000_000)).collect();
+        assert!(matches!(Expected::of_entries(&big), Err(GhulError::Corrupted { .. })), "more than one vault may hold");
     }
 }

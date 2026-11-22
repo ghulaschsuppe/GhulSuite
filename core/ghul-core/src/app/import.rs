@@ -193,7 +193,13 @@ fn parse_zip(data: &[u8]) -> Result<Parsed> {
     if names.iter().any(|n| n.ends_with(".pgp")) && !pick.ends_with(".json") {
         return Err(GhulError::ImportEncrypted);
     }
-    let file = zip.by_name(&pick).map_err(|_| GhulError::ImportUnknownFormat)?;
+    let file = zip.by_name(&pick).map_err(|e| match e {
+        // An encrypted entry (the ZIP's own encryption is not read, M43).
+        zip::result::ZipError::UnsupportedArchive(m) if m == zip::result::ZipError::PASSWORD_REQUIRED => {
+            GhulError::ImportEncrypted
+        }
+        _ => GhulError::ImportUnknownFormat,
+    })?;
     if file.size() > MAX_IMPORT_BYTES {
         return Err(invalid("file too large"));
     }
@@ -352,8 +358,13 @@ fn parse_1password(accounts: &[Json]) -> Parsed {
                     ("002", "ccnum") => d.secret("number", &text),
                     ("002", "cvv") => d.secret("cvc", &text),
                     ("002", "expiry") => {
-                        // 1Password stores the expiry as YYYYMM.
-                        let e = if text.len() == 6 { format!("{}/{}", &text[4..], &text[2..4]) } else { text.clone() };
+                        // 1Password stores the expiry as YYYYMM; anything else (also six bytes of
+                        // other characters, M28) is kept as it is.
+                        let e = if text.len() == 6 && text.bytes().all(|b| b.is_ascii_digit()) {
+                            format!("{}/{}", &text[4..], &text[2..4])
+                        } else {
+                            text.clone()
+                        };
                         d.text("expiry", &e)
                     }
                     ("002", "pin") => d.secret("pin", &text),
@@ -1120,20 +1131,19 @@ fn parse_csv(text: &str) -> Result<Parsed> {
         "CSV"
     };
     // GhulSuite's own export: values exactly as stored (spaces kept), with the apostrophe that
-    // protects spreadsheet programs from formulas taken off again.
+    // protects spreadsheet programs from formulas (or marks a value that starts with one)
+    // taken off again (see `csv_field`).
     let own = header == OWN_CSV_COLUMNS;
     let format = if own { "GhulSuite (CSV)" } else { format };
     let mut p = Parsed { format: format.into(), ..Default::default() };
     let get = |row: &Vec<String>, c: Option<usize>| {
         c.and_then(|i| row.get(i))
-            .map(|s| if own { s.strip_prefix('\'').unwrap_or(s).to_owned() } else { s.trim().to_owned() })
+            .map(|s| if own { own_value(s).to_owned() } else { s.trim().to_owned() })
             .unwrap_or_default()
     };
     // Passwords and codes as they are: spaces at their ends may belong to them.
     let get_exact = |row: &Vec<String>, c: Option<usize>| {
-        c.and_then(|i| row.get(i))
-            .map(|s| if own { s.strip_prefix('\'').unwrap_or(s).to_owned() } else { s.to_owned() })
-            .unwrap_or_default()
+        c.and_then(|i| row.get(i)).map(|s| if own { own_value(s).to_owned() } else { s.to_owned() }).unwrap_or_default()
     };
     // Columns a login keeps as fields of its own (the others are mapped above, or only describe
     // the export itself).
@@ -1237,10 +1247,28 @@ fn parse_csv(text: &str) -> Result<Parsed> {
 /// Columns of GhulSuite's own CSV export.
 const OWN_CSV_COLUMNS: [&str; 8] = ["type", "title", "username", "password", "url", "notes", "totp", "folder"];
 
-fn csv_field(s: &str) -> String {
-    // Spreadsheet programs run cells starting with = + - @ (or a tab/CR before them) as formulas
-    // ("CSV injection"). A leading apostrophe makes them plain text; the own import removes it.
-    let s = if s.starts_with(['=', '+', '-', '@', '\t', '\r', '\'']) { format!("'{s}") } else { s.to_owned() };
+/// What a spreadsheet program takes as the start of a formula, and the apostrophe that marks a
+/// cell as plain text.
+const FORMULA_START: [char; 7] = ['=', '+', '-', '@', '\t', '\r', '\''];
+
+/// A cell of the own CSV export as the own import reads it: an apostrophe before a formula start
+/// (or before an apostrophe) is the export's and goes (see [`csv_field`]); any other is kept.
+fn own_value(s: &str) -> &str {
+    match s.strip_prefix('\'') {
+        Some(rest) if rest.starts_with(FORMULA_START) => rest,
+        _ => s,
+    }
+}
+
+/// A CSV cell. `spreadsheet_safe`: spreadsheet programs run cells starting with = + - @ (or a
+/// tab/CR before them) as formulas ("CSV injection"); a leading apostrophe makes them plain
+/// text. Other password managers take the apostrophe as part of the value (M29), so by default
+/// the values are written exactly as they are, never with an apostrophe. Then the own import
+/// (see [`own_value`]) reads one rare kind of value differently: one that itself starts with an
+/// apostrophe before a formula start (`'=x` comes back as `=x`).
+fn csv_field(s: &str, spreadsheet_safe: bool) -> String {
+    let mark = spreadsheet_safe && s.starts_with(FORMULA_START);
+    let s = if mark { format!("'{s}") } else { s.to_owned() };
     if s.contains([',', '"', '\n', '\r']) {
         format!("\"{}\"", s.replace('"', "\"\""))
     } else {
@@ -1261,7 +1289,8 @@ fn field_text(f: &Field) -> String {
 /// GhulPass entries as CSV (`type,title,username,password,url,notes,totp,folder`). Every field
 /// without a column of its own (custom fields of logins and notes, the fields of other entry
 /// types) and the tags are written into `notes` as `name: value` lines: nothing is lost.
-pub(crate) fn export_csv(entries: &[Entry]) -> Zeroizing<String> {
+/// `spreadsheet_safe`: see [`csv_field`].
+pub(crate) fn export_csv(entries: &[Entry], spreadsheet_safe: bool) -> Zeroizing<String> {
     let mut out = Zeroizing::new(OWN_CSV_COLUMNS.join(",") + "\n");
     for e in entries.iter().filter(|e| !e.deleted) {
         let get = |k: &str| e.fields.get(k).map(field_text).unwrap_or_default();
@@ -1292,7 +1321,7 @@ pub(crate) fn export_csv(entries: &[Entry]) -> Zeroizing<String> {
         let row =
             [kind, &get("title"), &username, &password, &url, &notes, &get("totp"), e.folder.as_deref().unwrap_or("")]
                 .iter()
-                .map(|s| csv_field(s))
+                .map(|s| csv_field(s, spreadsheet_safe))
                 .collect::<Vec<_>>()
                 .join(",");
         out.push_str(&row);
@@ -1466,6 +1495,28 @@ mod tests {
         assert_eq!(p.totps.len(), 1);
         let card = p.entries.iter().find(|e| e.entry_type == "card").unwrap();
         assert_eq!(card.folder.as_deref(), Some("Privat"));
+        assert_eq!(card.fields.get("expiry"), Some(&crate::vault::Field::Text("12/28".into())));
+    }
+
+    /// M28: an expiry of six bytes that are not six digits (multibyte characters) is kept as it
+    /// is; slicing it as YYYYMM would cut a character and panic.
+    #[test]
+    fn a_multibyte_expiry_is_kept() {
+        for expiry in ["ä12/28", "12/2€", "€€", "１２/２８"] {
+            let data = serde_json::json!({ "accounts": [{ "vaults": [{ "attrs": { "name": "V" }, "items": [
+                { "categoryUuid": "002", "overview": { "title": "Karte" }, "details": { "sections": [{ "fields": [
+                    { "id": "expiry", "value": { "string": expiry } }] }] } }
+            ] }] }] });
+            let mut buf = std::io::Cursor::new(Vec::new());
+            {
+                let mut z = zip::ZipWriter::new(&mut buf);
+                z.start_file("export.data", zip::write::SimpleFileOptions::default()).unwrap();
+                std::io::Write::write_all(&mut z, data.to_string().as_bytes()).unwrap();
+                z.finish().unwrap();
+            }
+            let p = parse(buf.get_ref(), "export.1pux").unwrap();
+            assert_eq!(p.entries[0].fields.get("expiry"), Some(&crate::vault::Field::Text(expiry.into())), "{expiry}");
+        }
     }
 
     #[test]
@@ -1517,6 +1568,52 @@ mod tests {
         assert_eq!(e.get("notes (2)"), "x");
     }
 
+    /// M29: for another password manager the values go as they are (no apostrophe before
+    /// `=`, `+`, `-`, `@`); with `spreadsheet_safe` they are protected. The own import reads
+    /// both back exactly, also exports of older versions (always protected).
+    #[test]
+    fn csv_export_plain_or_safe_for_spreadsheets() {
+        let values = ["=1+1", "+49 170", "-x-", "@home", "'quoted", "''double", "'=quoted", "plain"];
+        let entries: Vec<Entry> = values
+            .iter()
+            .enumerate()
+            .map(|(i, v)| {
+                let mut e = Entry::new([i as u8 + 1; 16], "login", 0);
+                e.fields.insert("title".into(), Field::Text(format!("t{i}")));
+                e.fields.insert("password".into(), Field::Secret((*v).into()));
+                e
+            })
+            .collect();
+        let password_cells = |csv: &str| -> Vec<String> {
+            let rows = csv_records(csv);
+            rows[1..].iter().map(|r| r[3].clone()).collect()
+        };
+        let plain = export_csv(&entries, false);
+        let cells = password_cells(&plain);
+        for (v, c) in values.iter().zip(&cells) {
+            assert_eq!(c, v, "plain export of {v:?}: exactly the value");
+        }
+        let safe = export_csv(&entries, true);
+        for (v, c) in values.iter().zip(&password_cells(&safe)) {
+            assert!(!c.starts_with(['=', '+', '-', '@']), "{c:?}");
+            assert_eq!(own_value(c), *v);
+        }
+        let p = parse(safe.as_bytes(), "export.csv").unwrap();
+        let got: Vec<String> = p.entries.iter().map(|e| e.get("password")).collect();
+        assert_eq!(got, values, "the own import reads every value of the safe export back");
+        // The plain export: every value back but the rare ones that start with an apostrophe
+        // before a formula start (or an apostrophe).
+        let p = parse(plain.as_bytes(), "export.csv").unwrap();
+        for (v, e) in values.iter().zip(&p.entries) {
+            let back = e.get("password");
+            if v.starts_with("''") || v.starts_with("'=") {
+                assert_eq!(back, v[1..], "{v:?}");
+            } else {
+                assert_eq!(back, *v, "{v:?}");
+            }
+        }
+    }
+
     /// The CSV export keeps custom fields of logins and notes, and the tags, in the notes.
     #[test]
     fn csv_export_keeps_custom_fields() {
@@ -1525,7 +1622,7 @@ mod tests {
         e.fields.insert("password".into(), Field::Secret("pw".into()));
         e.fields.insert("Kundennr".into(), Field::Text("4711".into()));
         e.tags = vec!["privat".into()];
-        let csv = export_csv(&[e]);
+        let csv = export_csv(&[e], false);
         assert!(csv.contains("Kundennr: 4711"), "{}", csv.as_str());
         assert!(csv.contains("tags: privat"));
     }
@@ -1619,7 +1716,7 @@ mod tests {
         let mut card = Entry::new([2; 16], "card", 0);
         card.fields.insert("title".into(), Field::Text("Karte".into()));
         card.fields.insert("number".into(), Field::Secret("4111".into()));
-        let csv = export_csv(&[login, card]);
+        let csv = export_csv(&[login, card], false);
         let p = parse(csv.as_bytes(), "export.csv").unwrap();
         assert_eq!(p.entries.len(), 2);
         assert_eq!(p.entries[0].get("title"), "A, \"B\"");

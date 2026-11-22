@@ -81,6 +81,8 @@ class BgJob internal constructor(
     private var itemState by mutableStateOf("")
 
     var title: String get() = titleState; set(v) { titleState = v; changed() }
+    /** What kind of job it is, without names of files (M18: Android's notification of the running job). */
+    internal var publicTitle = ""
     /** Items done (files). */
     var done: Int get() = doneState; set(v) { doneState = v; changed() }
     /** Items in all (0: one thing, or not known yet). */
@@ -90,6 +92,9 @@ class BgJob internal constructor(
     var bytesTotal: Long get() = bytesTotalState; set(v) { bytesTotalState = v; changed() }
     /** Name of the item worked on now. */
     var item: String get() = itemState; set(v) { itemState = v; changed() }
+
+    /** Saving (N3): the new file is in place, the one it replaced is overwritten with zeros now. */
+    var wipingOld by mutableStateOf(false)
 
     var state by mutableStateOf(JobState.WAITING)
         internal set
@@ -117,7 +122,7 @@ class BgJob internal constructor(
             }
         }
 
-    fun info() = JobInfo(title, done, total, bytes, bytesTotal, item, progress, cancellable)
+    fun info() = JobInfo(title, done, total, bytes, bytesTotal, item, progress, cancellable, publicTitle)
 }
 
 /** A job as the platform shows it outside the app's window (Android notification). */
@@ -125,6 +130,8 @@ data class JobInfo(
     val title: String, val done: Int, val total: Int, val bytes: Long, val bytesTotal: Long, val item: String, val progress: Float?,
     /** False: saving the suite file (no "Cancel"). */
     val cancellable: Boolean = true,
+    /** The kind of job without any name ([title] may name a file), for notifications. */
+    val publicTitle: String = "",
 )
 
 /**
@@ -263,6 +270,11 @@ class Jobs internal constructor(private val state: AppState) {
             }
             var message: String? = null
             try {
+                // The name-free kind for notifications, on the side: the texts must not hold the job up.
+                state.scope.launch {
+                    job.publicTitle = catching { kindName(job.kind) }.getOrDefault("")
+                    publish()
+                }
                 job.title = title()
                 lanes.getOrPut(lane) { Mutex() }.withLock {
                     job.state = JobState.RUNNING
@@ -336,17 +348,19 @@ class Jobs internal constructor(private val state: AppState) {
         }
     }
 
+    private suspend fun kindName(kind: JobKind): String = state.str(
+        when (kind) {
+            JobKind.UPLOAD -> Res.string.job_kind_upload
+            JobKind.DOWNLOAD -> Res.string.job_kind_download
+            JobKind.ADD -> Res.string.job_kind_add
+            JobKind.EXPORT -> Res.string.job_kind_export
+            JobKind.SAVE -> Res.string.job_kind_save
+        },
+    )
+
     /** "Upload finished · 3 of 3 done": what ended and the counts, never a file name. */
     private suspend fun publicText(job: BgJob): String {
-        val what = state.str(
-            when (job.kind) {
-                JobKind.UPLOAD -> Res.string.job_kind_upload
-                JobKind.DOWNLOAD -> Res.string.job_kind_download
-                JobKind.ADD -> Res.string.job_kind_add
-                JobKind.EXPORT -> Res.string.job_kind_export
-                JobKind.SAVE -> Res.string.job_kind_save
-            },
-        )
+        val what = kindName(job.kind)
         val end = state.str(
             when (job.state) {
                 JobState.CANCELLED -> Res.string.job_end_cancelled
@@ -414,7 +428,7 @@ private fun JobRow(jobs: Jobs, job: BgJob) {
         IconTile(icon, color, size = 34.dp)
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Text(job.title, fontWeight = FontWeight.SemiBold, fontSize = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, color = t.fg)
-            val p = job.progress
+            val p = job.progress.takeUnless { job.wipingOld }
             val bar = Modifier.fillMaxWidth().height(4.dp).clip(RoundedCornerShape(2.dp))
             if (p == null || job.state == JobState.WAITING) {
                 LinearProgressIndicator(bar, color = color, trackColor = t.surface3)
@@ -435,6 +449,7 @@ private fun jobDetail(job: BgJob): String {
     if (job.state == JobState.WAITING) return stringResource(Res.string.job_waiting)
     // Saving: written and read back in one bar, so a percentage says more than the bytes.
     if (job.kind == JobKind.SAVE) {
+        if (job.wipingOld) return stringResource(Res.string.save_wiping_old)
         val p = job.progress ?: return stringResource(Res.string.job_starting)
         return stringResource(Res.string.save_progress, "${(p * 100).toInt()} %")
     }

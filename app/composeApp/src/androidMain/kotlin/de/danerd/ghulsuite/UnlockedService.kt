@@ -92,7 +92,9 @@ class UnlockedService : Service() {
     }
 
     private fun postDone(end: de.danerd.ghulsuite.ui.JobEnd) {
-        val text = end.text
+        // M18: also while the device is unlocked, apps with access to notifications read them:
+        // only what ended and the counts, never a name (the full message is in the app).
+        val text = end.publicText
         val nm = getSystemService(NotificationManager::class.java)
         nm.createNotificationChannel(NotificationChannel(JOBS_CHANNEL, getString(R.string.notif_job_channel), NotificationManager.IMPORTANCE_DEFAULT))
         val open = PendingIntent.getActivity(
@@ -165,14 +167,13 @@ class UnlockedService : Service() {
         val cancel = PendingIntent.getService(
             this, 3, Intent(this, UnlockedService::class.java).setAction(ACTION_CANCEL_JOBS), PendingIntent.FLAG_IMMUTABLE,
         )
-        val detail = listOfNotNull(
-            if (job.total > 1) getString(R.string.notif_job_of, job.done, job.total) else null,
-            job.item.takeIf { it.isNotEmpty() },
-        ).joinToString(" · ")
+        // M18: the kind of job and the counts, no names of documents (apps with access to
+        // notifications read them also while the device is unlocked).
+        val detail = if (job.total > 1) getString(R.string.notif_job_of, job.done, job.total) else ""
         val p = job.progress
         val b = Notification.Builder(this, CHANNEL)
             .setSmallIcon(R.drawable.ic_shield)
-            .setContentTitle(job.title)
+            .setContentTitle(job.publicTitle.ifEmpty { getString(R.string.notif_title) })
             .setContentText(detail)
             .setProgress(100, ((p ?: 0f) * 100).toInt(), p == null)
             .setContentIntent(open)

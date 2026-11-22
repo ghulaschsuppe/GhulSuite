@@ -180,17 +180,19 @@ fun VaultsSection(state: AppState) {
     var sharing by remember { mutableStateOf<VaultUi?>(null) }
     val exported = stringResource(Res.string.msg_exported)
     val added = stringResource(Res.string.msg_vault_added)
-    val save = rememberSaveFile { ok -> if (ok) state.message(exported) }
+    val save = rememberSaveFile { state.reportSaveFile(it, exported) }
     var foreign by remember { mutableStateOf<ForeignRequest?>(null) }
     /** The GhulDocs vault whose export waits for the system's save dialog. */
     val exportingDocs = remember { arrayOfNulls<VaultUi>(1) }
-    val exportDocs = rememberCreateStream { sink ->
+    val exportDocs = rememberCreateStream(onFailed = { state.reportSaveFile(SaveFileResult.FAILED) }) { sink ->
         val v = exportingDocs[0]
         exportingDocs[0] = null
         if (sink == null) return@rememberCreateStream
         if (v == null) {
+            // Recreated while the dialog was open: what to export is gone (said, not hidden).
             runCatching { sink.close() }
             runCatching { sink.discard() }
+            state.reportSaveFile(SaveFileResult.FAILED)
             return@rememberCreateStream
         }
         state.exportDocsVault(v, sink)
@@ -277,7 +279,7 @@ fun VaultsSection(state: AppState) {
                                     exportEncrypted(v)
                                 }
                             }
-                            if (v.available && filePickersAvailable) {
+                            if (v.available && filePickersAvailable && state.single == null) {
                                 SheetRow(
                                     stringResource(Res.string.share_vault_action), stringResource(Res.string.vault_share_sub),
                                     leading = { IconTile(Icons.Filled.Share, paletteColor(5)) }, divider = true,

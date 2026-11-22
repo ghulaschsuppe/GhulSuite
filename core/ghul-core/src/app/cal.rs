@@ -255,9 +255,29 @@ pub(crate) fn event_of(e: &Entry) -> CalEvent {
     }
 }
 
+/// The fields of an event this version knows (see [`put_event_fields`]).
+const EVENT_FIELDS: &[&str] = &[
+    "calendar",
+    "title",
+    "start",
+    "end",
+    "repeat",
+    "until",
+    "location",
+    "notes",
+    "zone",
+    "all_day",
+    "exceptions",
+    "reminders",
+    "links",
+    "birth_year",
+];
+
+/// Writes the fields of `ev` into `e`. Fields this version does not know (added by a newer one)
+/// stay as they are (H9: an edit with an older app must not drop them).
 fn put_event_fields(e: &mut Entry, ev: &CalEvent) {
     let f = &mut e.fields;
-    f.clear();
+    f.retain(|k, _| !EVENT_FIELDS.contains(&k.as_str()));
     let mut text = |k: &str, v: &str| {
         if !v.is_empty() {
             f.insert(k.into(), Field::Text(v.to_owned()));
@@ -320,6 +340,9 @@ fn validate(ev: &mut CalEvent) -> Result<()> {
     ev.exceptions.retain(|d| Date::parse(d).is_some());
     ev.exceptions.sort();
     ev.exceptions.dedup();
+    // At most MAX_EXCEPTIONS: the oldest go (long past; an older version had no limit).
+    let cut = ev.exceptions.len().saturating_sub(MAX_EXCEPTIONS);
+    ev.exceptions.drain(..cut);
     ev.reminders.retain(|r| *r <= MAX_REMINDER_MINUTES);
     let plain_name = |z: &str| z.len() <= 64 && z.bytes().all(|b| b.is_ascii_alphanumeric() || b"/_-+".contains(&b));
     if ev.all_day || !plain_name(&ev.zone) {
@@ -327,6 +350,11 @@ fn validate(ev: &mut CalEvent) -> Result<()> {
     }
     Ok(())
 }
+
+/// M26: the most exceptions (single days left out) a series has; an import keeps the latest.
+pub(crate) const MAX_EXCEPTIONS: usize = 1000;
+/// M26: the most events one `.ics` import adds.
+pub(crate) const MAX_IMPORT_EVENTS: usize = 20_000;
 
 /// A reminder comes at most a year ahead; files of other programs carry odd ones (decades).
 pub(crate) const MAX_REMINDER_MINUTES: u32 = 366 * 1440;
@@ -412,6 +440,8 @@ pub(crate) fn expand(ev: &CalEvent, from: Date, to: Date) -> Vec<(DateTime, Date
         }
     };
     let until = Date::parse(&ev.repeat_until);
+    // Looked up for every occurrence: a set, not the list (M26).
+    let exceptions: std::collections::HashSet<Date> = ev.exceptions.iter().filter_map(|x| Date::parse(x)).collect();
     let mut out = Vec::new();
     if ev.repeat == CalRepeat::None {
         if start.date <= to && last_day(start) >= from {
@@ -436,7 +466,7 @@ pub(crate) fn expand(ev: &CalEvent, from: Date, to: Date) -> Vec<(DateTime, Date
         if s.date > to || until.is_some_and(|u| s.date > u) {
             break;
         }
-        if last_day(s) < from || ev.exceptions.iter().any(|x| x == &s.date.to_string()) {
+        if last_day(s) < from || exceptions.contains(&s.date) {
             continue;
         }
         out.push((s, s.add_minutes(span)));
@@ -571,6 +601,7 @@ impl GhulSuite {
         self.with_open(|o| {
             let target = vault_with(o, &ev.calendar_id, T_CAL)?;
             let now = now_ms();
+            let mut moved = None;
             if !ev.id.is_empty() {
                 let source = vault_with(o, &ev.id, T_EVENT)?;
                 if source == target {
@@ -583,11 +614,22 @@ impl GhulSuite {
                     return Ok(ev.id.clone());
                 }
                 let (_, c) = o.vault_mut(&source)?;
-                tombstone(find_mut(c, &ev.id, T_EVENT)?);
+                let old = find_mut(c, &ev.id, T_EVENT)?;
+                // Moved to a calendar in another vault: what this version does not know of the
+                // event (fields, `extra`, tags, folder) goes along (H9).
+                let kept = (old.fields.clone(), old.extra.clone(), old.tags.clone(), old.folder.clone());
+                tombstone(old);
                 self.save_vault(o, &source)?;
+                moved = Some(kept);
             }
             let (_, c) = o.vault_mut(&target)?;
             let mut e = Entry::new(new_id(), T_EVENT, now);
+            if let Some((fields, extra, tags, folder)) = moved {
+                e.fields = fields;
+                e.extra = extra;
+                e.tags = tags;
+                e.folder = folder;
+            }
             put_event_fields(&mut e, &ev);
             let id = hex_id(&e);
             c.payload.entries.push(e);
@@ -798,7 +840,7 @@ impl GhulSuite {
             let vid = vault_with(o, &calendar_id, T_CAL)?;
             let (_, c) = o.vault_mut(&vid)?;
             let key = |e: &CalEvent| format!("{}{SEP}{}{SEP}{}", e.title.trim().to_lowercase(), e.start, e.end);
-            let mut seen: Vec<String> =
+            let mut seen: std::collections::HashSet<String> =
                 live(c, T_EVENT).map(event_of).filter(|e| e.calendar_id == calendar_id).map(|e| key(&e)).collect();
             let mut added = 0;
             let now = now_ms();
@@ -808,7 +850,7 @@ impl GhulSuite {
                 if validate(&mut ev).is_err() || seen.contains(&key(&ev)) {
                     continue;
                 }
-                seen.push(key(&ev));
+                seen.insert(key(&ev));
                 let mut e = Entry::new(new_id(), T_EVENT, now);
                 put_event_fields(&mut e, &ev);
                 c.payload.entries.push(e);

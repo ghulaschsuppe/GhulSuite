@@ -14,10 +14,11 @@ ohne Sync-Dienst und ohne Vertrauensvorschuss. Die Daten liegen da, wo **du** si
 </div>
 
 > [!WARNING]
-> **Work in Progress: noch nicht für den produktiven Einsatz geeignet.**
-> GhulSuite befindet sich nach wie vor in Entwicklung. Ganze Teile der App und das Dateiformat können sich jederzeit
-> ändern, auch ohne Umzug älterer Daten. Verlass dich nicht darauf, dass heute gespeicherte Daten mit der nächsten
-> Version noch lesbar sind, und lege nichts hinein, was du nicht zusätzlich woanders hast.
+> **Entwicklungsversion: noch nicht für den produktiven Einsatz geeignet.**
+> GhulSuite ist noch in Entwicklung; bisher gibt es nur Vorabversionen. Das Dateiformat ist seit dem 21.11.2026
+> eingefroren (Format 3): Jede spätere Version liest Dateien in diesem Format weiter
+> ([Kompatibilitätszusage](docs/FORMAT.md)). Fehler in der App können trotzdem Daten kosten: Bewahre eine zweite
+> Kopie deiner Suite-Datei auf und lege nichts hinein, was du nicht zusätzlich woanders hast.
 
 <div align="center">
 
@@ -56,7 +57,7 @@ ohne Sync-Dienst und ohne Vertrauensvorschuss. Die Daten liegen da, wo **du** si
 | | |
 |---|---|
 | **Eine App, vier Bereiche** | Passwörter, 2FA-Codes, Dokumente und Kalender, einzeln ein- und ausschaltbar |
-| **Zwei Faktoren, immer** | Master-Passwort **plus** Security Key (FIDO2) oder Schlüsseldatei, dazu ein Notfallblatt |
+| **Zwei Faktoren** | Master-Passwort **plus** Security Key (FIDO2) oder Schlüsseldatei. Ausnahmen: der Wiederherstellungscode vom Notfallblatt öffnet allein, und auf dem Handy entsperren Fingerabdruck oder App-PIN, wenn du sie einschaltest |
 | **Eine Datei** | Die ganze Suite in einer verschlüsselten Datei (`.ghlzip`, bis 3,75 GiB): speichern, z. B. auf einen USB-Stick, und auf dem nächsten Gerät öffnen. Kein Sync, kein Abgleich |
 | **Offline** | Keine Server, keine Konten, kein Cloud-Dienst. Nach draußen gehen nur die Update-Prüfung und, wenn du sie einschaltest, die Prüfung auf Datenlecks; beide abschaltbar |
 | **Dokumente und Scans** | GhulDocs hält wichtige Dokumente verschlüsselt, in bis zu 3 Tresoren mit je bis 1 GB; auf Android scannst du Papier mit der Kamera direkt als PDF hinein |
@@ -73,8 +74,10 @@ dessen Zukunft. GhulSuite dreht das um:
   nicht einmal die Namen deiner Tresore.
 - 📴 **Kein Server, kein Konto.** Es gibt nichts, wo du dich anmelden musst, und nichts, was gehackt, abgeschaltet
   oder teurer werden kann. Die App braucht kein Netz.
-- 🗝️ **Zwei Faktoren, ohne Ausnahme.** Master-Passwort **plus** Security Key (FIDO2) oder Schlüsseldatei.
-  Dazu ein Wiederherstellungscode mit Notfallblatt für den Tag, an dem alles schiefgeht. Verlierst du einen Key
+- 🗝️ **Zwei Faktoren.** Master-Passwort **plus** Security Key (FIDO2) oder Schlüsseldatei. Zwei Ausnahmen, beide
+  von dir gewählt: der Wiederherstellungscode mit Notfallblatt für den Tag, an dem alles schiefgeht (er öffnet allein
+  alles, darum gehört das Blatt sicher verwahrt), und auf dem Handy das Schnell-Entsperren mit Fingerabdruck oder
+  App-PIN, das nur nach einem vollen Entsperren mit beiden Faktoren gilt. Verlierst du einen Key
   oder das Blatt, entfernst bzw. erneuerst du es: Was du ab dann speicherst, öffnet es nicht mehr.
 - 📦 **Die Suite ist eine Datei.** Alles steckt in einer verschlüsselten Datei (`.ghlzip`). Speichern, auf den
   USB-Stick legen, auf dem nächsten Gerät öffnen, ohne Konto, ohne Sync-Dienst und ohne Anbieterbindung. Aktuell
@@ -196,20 +199,28 @@ sperrt die App, sind sie weg. Die Kamera-App des Systems wird nicht benutzt. Unt
 <td width="200" valign="top"><img src="docs/images/phone-setup.png" width="190" alt="Der Startbildschirm"></td>
 <td valign="top">
 
-Ein Assistent führt in wenigen Schritten durch alles:
+Ein Assistent führt in acht Schritten durch alles:
 
 1. **Master-Passwort** wählen.
-2. **Zweiter Faktor:** Security Key (FIDO2) oder eine Schlüsseldatei, z. B. auf einem USB-Stick.
-3. **Notfallblatt** als PDF: ein Wiederherstellungscode mit QR, falls Passwort oder Key verloren gehen.
+2. **Zweiter Faktor:** Security Key (FIDO2, mit Backup) oder eine Schlüsseldatei, getrennt von der Suite-Datei
+   aufbewahrt (nicht auf demselben Stick).
+3. **Anlegen:** Die Suite entsteht auf diesem Gerät (mit Key: einmal berühren).
 4. **Bereiche** auswählen.
-5. **Suite-Datei** an einem Ort deiner Wahl anlegen, z. B. auf dem USB-Stick oder in einem Cloud-Ordner.
+5. **Sperre:** wann GhulSuite sich von selbst sperrt.
+6. **Entsperren:** auf dem Handy auf Wunsch Fingerabdruck oder App-PIN.
+7. **Notfallblatt:** ein Wiederherstellungscode mit QR, falls Passwort oder Key verloren gehen; am besten direkt
+   ausdrucken (eine als PDF gespeicherte Kopie danach löschen).
+8. **Suite-Datei** an einem Ort deiner Wahl anlegen, am besten auf einem USB-Stick in einem eigenen Ordner. Unter
+   Android gibst du danach den Ordner frei, damit die App beim Speichern erst eine neue Datei daneben schreibt und die
+   alte nie direkt überschreibt. Cloud-Ordner sind dafür nicht gedacht: Viele Cloud-Apps erlauben nur das direkte
+   Überschreiben und behalten ältere Fassungen.
 
 Die Suite liegt dann auf diesem Gerät (Arbeitskopie) und als Datei an dem gewählten Ort. Änderungen kommen in die
 Datei, wenn du oben auf das Speichern-Symbol tippst.
 
 **Im Alltag** reicht auf dem Handy Fingerabdruck oder App-PIN; der Schnellzugang liegt geschützt im Schlüsselspeicher
-des Geräts. Die **Sofortsperre** schließt alles mit einem Schütteln oder über
-die Schnellkachel und löscht den Schnellzugang, bis du wieder mit beiden Faktoren entsperrst.
+des Geräts. Eingerichtet wird er mit Passwort und zweitem Faktor, mit einer Gültigkeit, die du dabei wählst. Die **Sofortsperre** schließt alles mit einem Schütteln oder über
+die Schnellkachel und löscht den Schnellzugang: Danach entsperrst du mit beiden Faktoren und richtest ihn neu ein.
 
 </td></tr></table>
 
@@ -228,11 +239,12 @@ am PC dieselbe Datei öffnen, arbeiten, speichern; wieder am Handy öffnen.
   In die Suite-Datei kommt sie, wenn du oben neben „Sperren“ auf das Speichern-Symbol tippst (am PC auch Strg+S); es
   erscheint, sobald etwas ungespeichert ist. Ein Dialog fragt kurz nach und zeigt den Fortschritt; die App merkt
   sich die Datei und speichert direkt dorthin, auch auf den Stick. Sperrst du mitten im Speichern, läuft es zu Ende.
-  Nach drei Tagen ohne Speichern erinnert die App, und am PC fragt sie beim Beenden. Die Arbeitskopie sorgt dafür,
+  Nach einem neuen oder geänderten Passwort oder 2FA-Konto erinnert die App gleich, sonst nach drei Tagen ohne
+  Speichern; am PC fragt sie beim Beenden. Die Arbeitskopie sorgt dafür,
   dass die App auch ohne den Stick funktioniert.
 - **Aktuell ist, was zuletzt gespeichert wurde.** Zusammengeführt wird nichts. Wurde die Datei inzwischen auf einem
-  anderen Gerät gespeichert, fragt die App, bevor sie sie überschreibt: überschreiben oder unter neuem Namen
-  speichern.
+  anderen Gerät gespeichert, sagt die App das gleich nach dem Entsperren und bietet an, sie zu öffnen; vor dem
+  Überschreiben fragt sie noch einmal: überschreiben oder unter neuem Namen speichern.
 - **Erst prüfen, dann ersetzen.** Beim Öffnen wird jeder Teil der Datei geprüft (Siegel, Liste der Tresore,
   Prüfsumme jedes Dokuments, alles aus derselben Suite), bevor sie den Stand auf dem Gerät ersetzt. Ist die Datei
   älter als der Stand hier, wurde sie von einem anderen Stand aus weiterbearbeitet oder enthält sie eine andere Suite,
@@ -268,7 +280,7 @@ Hintergrund. Nur zwei Verbindungen baut die App auf, beide abschaltbar:
 
 | Verbindung | Wann | Was hinausgeht |
 |---|---|---|
-| **Update-Prüfung** | höchstens einmal am Tag nach dem Entsperren und wenn du selbst nachsiehst; abschaltbar unter Optionen → Über → Updates | eine Anfrage an GitHub nach der neuesten Version (deine IP-Adresse, keine Kennung); ein Update wird nur nach deiner Zustimmung geladen |
+| **Update-Prüfung** | höchstens einmal am Tag nach dem Entsperren und wenn du selbst nachsiehst; abschaltbar unter Optionen → Über und Hilfe → Updates | eine Anfrage an GitHub nach der neuesten Version (deine IP-Adresse, keine Kennung); ein Update wird nur nach deiner Zustimmung geladen |
 | **Prüfung auf Datenlecks** (GhulPass) | nur, wenn du sie im Sicherheitscheck einschaltest (standardmäßig aus) | je Passwort die ersten 5 Zeichen seines SHA-1-Werts an „Pwned Passwords“ (Have I Been Pwned), nie das Passwort (k-Anonymität) |
 
 Einen **Fehlerbericht** zeigt die App nur an. Du entscheidest, ob du ihn kopierst, speicherst oder über eine andere
@@ -293,7 +305,7 @@ App (etwa deine Mail-App) an den Entwickler schickst. Von selbst sendet GhulSuit
 |---|---|---|
 | Jemand mit deiner Suite-Datei (z. B. verlorener USB-Stick) | Datensalat; ungefähr, wie viele Dokumente es gibt und wie groß sie sind | ohne Passwort **und** zweiten Faktor nichts; er kann nichts unterschieben (Siegel) und dir keine ältere Datei unbemerkt unterjubeln (die App fragt nach) |
 | Jemand mit deinem gesperrten Handy | Termin-Erinnerungen mit Titel und Uhrzeit (einstellbar bis „nur Hinweis“) | Einträge, Codes, Dokumente |
-| Jemand, der deine App kurz entsperrt in der Hand hat | was gerade offen ist | keinen neuen Wiederherstellungscode, keinen eigenen Key, keine eigene App-PIN: dafür braucht es Passwort und zweiten Faktor bzw. das Passwort |
+| Jemand, der deine App kurz entsperrt in der Hand hat | alles, was die App zeigt: Passwörter, 2FA-Codes, Dokumente und Termine; er kann sie abschreiben, kopieren, ändern, löschen und Dokumente mit anderen Apps öffnen | ohne Master-Passwort: kein unverschlüsselter Export, kein 2FA-Geheimnis (als QR-Code oder im Eintrag), keine schwächere Sperre; ohne Passwort **und** zweiten Faktor: kein neuer Wiederherstellungscode, kein eigener Key, kein eigenes Schnell-Entsperren, keine Weitergabe als eigener Tresor, kein Löschen oder Ersetzen der Suite auf dem Gerät |
 | Ein verlorener Key oder ein altes Notfallblatt | nach dem Entfernen bzw. Erneuern höchstens eine alte Kopie der Suite-Datei, mit dem Stand von damals | alles, was du danach speicherst |
 | Wer dein Netz beobachtet | dass die App GitHub nach Updates fragt und, falls eingeschaltet, Pwned Passwords | Inhalte, Passwörter, Dokumente |
 | Eine App, mit der du ein Dokument öffnest | genau dieses Dokument (eine befristete Kopie) | alles andere |
@@ -301,20 +313,20 @@ App (etwa deine Mail-App) an den Entwickler schickst. Von selbst sendet GhulSuit
 - **Schlüssel:** Argon2id für das Passwort, FIDO2 `hmac-secret`/PRF für den Security Key; beide sind nötig.
 - **Verschlüsselung:** XChaCha20-Poly1305, jede Datei mit einem Siegel, das nur mit deinem Passwort entsteht;
   jedes Dokument mit eigenem Schlüssel, in Abschnitten verschlüsselt, die sich weder vertauschen noch weglassen
-  lassen. Dateiformat offen dokumentiert ([`docs/FORMAT.md`](docs/FORMAT.md)) mit unabhängig geprüften
-  Testvektoren.
+  lassen. Dateiformat offen dokumentiert ([`docs/FORMAT.md`](docs/FORMAT.md)) mit Testvektoren, die eine zweite,
+  eigene Implementierung in Python mit anderen Bibliotheken nachrechnet.
 - **Kein Klartext auf dem Datenträger:** Dokumente werden beim Einlesen verschlüsselt und beim Ansehen nur im
   Arbeitsspeicher entschlüsselt; gescannte Seiten bleiben im Arbeitsspeicher. Klartext entsteht nur, wenn du ein
   Dokument exportierst oder mit einer anderen App öffnest.
 - **Kern in Rust**, eine gemeinsame Codebasis für Android und Windows.
-- Der [Sicherheitsbericht](docs/AUDIT.md) fasst alle Audits und Testrunden zusammen: was behoben ist, was offen ist und wogegen GhulSuite schützt.
+- Der [Sicherheitsbericht](docs/AUDIT.md) fasst alle Prüfungen und Testrunden zusammen: was behoben ist, was offen ist und wogegen GhulSuite schützt.
 
 ## Was geprüft ist und was noch fehlt
 
-GhulSuite ist ein Soloprojekt ohne bezahlten externen Audit. Umso wichtiger ist, dass jeder nachprüfen kann, was
-getestet wird und was nicht:
+GhulSuite ist ein Hobbyprojekt ohne Prüfung durch Dritte; Hinweise sind über [`SECURITY.md`](SECURITY.md)
+willkommen. Jeder kann nachprüfen, was getestet wird und was nicht:
 
-- **Bei jeder Änderung** laufen über eine Million Einzelprüfungen in über 200 Testfunktionen: Angriffe auf Dateien,
+- **Bei jeder Änderung** laufen über 250 Testfunktionen im Kern, dazu die Desktop-Tests der Oberfläche: Angriffe auf Dateien,
   auf die Suite-Datei und auf GhulDocs (fehlende, vertauschte, alte, fremde oder abgezweigte Teile, ZIP-Tricks,
   vertauschte, abgeschnittene oder fremde Abschnitte eines Dokuments, ein volles GhulDocs), ein „bekloppter
   Nutzer“, der die Suite zwischen drei Geräten hin- und herträgt, kaputte und böswillige Eingaben in jeden Parser.
@@ -323,12 +335,13 @@ getestet wird und was nicht:
   Welt. Die Oberfläche wird am Desktop durchgeklickt, auch das Scannen mit gezeichneten Fotos.
 - **Im Emulator** werden die wichtigsten Abläufe durchgeklickt, mit einem Bild nach jedem Schritt.
 - **Jede Nacht** zusätzlich: langes Fuzzing, Dauerläufe, zufällige Bedienung im Emulator, Server mit kaputtem TLS
-  und 9.807 Zertifikatsketten gegen den TLS-Prüfer der Update- und Leak-Prüfung, ein Scan der APK.
+  und die Zertifikatsketten der Sammlung x509-limbo (zuletzt rund 9.800) gegen den TLS-Prüfer der Update- und
+  Leak-Prüfung, ein Scan der APK.
 - **Was gefunden wurde und was offen ist,** steht mit Nummer und Schwere im
-  [Testprotokoll](docs/TESTPROTOKOLL.md); wie getestet wird, im [Testkonzept](docs/TESTKONZEPT.md); wie mehrere Prüfer den Code prüfen, beheben und nachprüfen, im [Prüfkonzept](docs/PRUEFKONZEPT.md); jede Prüfung bisher (vom Inhaber und von KI-Agenten), das Gutachten zur Veröffentlichung und wie und warum sich das Konzept geändert hat, in der [Prüf-Chronik](docs/PRUEFCHRONIK.md).
+  [Testprotokoll](docs/TESTPROTOKOLL.md); wie getestet wird, im [Testkonzept](docs/TESTKONZEPT.md); wie der Code durchgesehen, behoben und nachgeprüft wird, im [Prüfkonzept](docs/PRUEFKONZEPT.md); jede Durchsicht bisher (vom Inhaber und von KI-Agenten) und wie und warum sich das Konzept geändert hat, in der [Prüf-Chronik](docs/PRUEFCHRONIK.md).
 
-Kein Test beweist, dass es keine Lücke mehr gibt. GhulSuite ist eine **Entwicklungsversion**: Speichere die
-Suite-Datei regelmäßig und bewahre eine Kopie auf. Und wenn du dich mit Sicherheit auskennst: Lies mit, greif an, melde, was du findest.
+Kein Test beweist, dass es keine Lücke mehr gibt. Speichere die Suite-Datei regelmäßig und bewahre eine Kopie auf.
+Und wenn du dich mit Sicherheit auskennst: Lies mit, greif an, melde, was du findest.
 
 ## Umziehen leicht gemacht
 
@@ -339,23 +352,26 @@ was sich nicht übernehmen lässt, wird mit Namen genannt und nicht stillschweig
 
 ## Download
 
-| | Stabil (freigegeben) | Vorab (Entwicklung) |
-|---|---|---|
-| **Android** | [GhulSuite.apk](https://github.com/ghulaschsuppe/GhulSuite/releases/latest/download/GhulSuite.apk) | [Vorabversionen](https://github.com/ghulaschsuppe/GhulSuite/releases) |
-| **Windows, Installer** | [GhulSuite.msi](https://github.com/ghulaschsuppe/GhulSuite/releases/latest/download/GhulSuite.msi) | [Vorabversionen](https://github.com/ghulaschsuppe/GhulSuite/releases) |
-| **Windows, portabel** (USB-Stick) | [GhulSuite-portable.zip](https://github.com/ghulaschsuppe/GhulSuite/releases/latest/download/GhulSuite-portable.zip) | [Vorabversionen](https://github.com/ghulaschsuppe/GhulSuite/releases) |
+Bisher gibt es **nur Vorabversionen**; eine stabile Version gibt es noch nicht.
 
-- **Stabil** sind die freigegebenen Versionen vom Zweig `main`. **Vorabversionen** (`0.6.0-dev.3`) entstehen
-  automatisch aus dem Zweig `dev`, bevor sie freigegeben werden: neuer, aber weniger getestet. Auf der
-  Release-Seite sind sie als „Pre-release“ markiert.
-- **Updates kommen aus der App:** Optionen → Über → Updates. Einmal am Tag nach dem Entsperren schaut GhulSuite nach
-  (abschaltbar), installiert wird nur nach deiner Zustimmung. Dort wählst du auch den Kanal: „Stabil“ oder „Vorab“.
+| | Vorabversion (Entwicklung) |
+|---|---|
+| **Android** | `GhulSuite.apk` auf der [Release-Seite](https://github.com/ghulaschsuppe/GhulSuite/releases) |
+| **Windows, Installer** | `GhulSuite.msi` auf der [Release-Seite](https://github.com/ghulaschsuppe/GhulSuite/releases) |
+| **Windows, portabel** (USB-Stick) | `GhulSuite-portable.zip` auf der [Release-Seite](https://github.com/ghulaschsuppe/GhulSuite/releases) |
+
+- **Vorabversionen** (z. B. `0.5.0-dev.12`) entstehen automatisch aus dem Zweig `dev` und sind auf der
+  Release-Seite als „Pre-release“ markiert. Stabile Versionen kommen später vom Zweig `main`.
+- **Updates kommen aus der App:** Optionen → Über und Hilfe → Updates. Einmal am Tag nach dem Entsperren schaut GhulSuite nach
+  (im Assistenten gefragt, jederzeit abschaltbar), installiert wird nur nach deiner Zustimmung. Dort wählst du auch
+  den Kanal: „Vorab“ oder „Stabil“ (Stabil bringt erst ab der ersten stabilen Version Updates).
 - **Geprüft vor jeder Installation:** Jede Version enthält `SHA256SUMS`, signiert mit dem Signaturschlüssel der App
   (`SHA256SUMS.sig`). Die App installiert nur, was zu dieser Signatur, Größe und Prüfsumme passt; Android prüft
   zusätzlich, dass das neue APK mit demselben Schlüssel signiert ist. Von Hand: `sha256sum -c SHA256SUMS`.
 - Der Windows-Installer ist (noch) nicht von Microsoft signiert: Windows SmartScreen fragt beim ersten Start nach.
 - **Testversionen** zu jeder Änderung (als eigene App neben der normalen installierbar, ohne Updates) gibt es weiterhin unter
-  **Actions → letzter grüner Lauf → Artefakte**.
+  **Actions → letzter grüner Lauf → Artefakte**. Die Testversion eines Arbeits-Branches oder Pull Requests ist bei
+  jedem Lauf mit einem anderen Wegwerf-Schlüssel signiert: vorher die installierte Testversion deinstallieren.
 
 ## Selbst bauen
 
@@ -404,8 +420,12 @@ GhulDocs vault of its own. The app only goes online for the update
 check and, if you switch it on, the password leak check (k-anonymity, Pwned Passwords); both can be switched off.
 Free software under the AGPL-3.0, see [`LICENSE`](LICENSE).
 
-> **Work in progress, not for production use.** GhulSuite is still under development; whole parts of the app and
-> the file format may change at any time, without migrating older data.
+> **Development version, not for production use.** So far there are only pre-releases. The file format is frozen
+> since 21 Nov 2026 (format 3): every later version keeps reading files in this format
+> ([compatibility promise](docs/FORMAT.md), in German). Bugs in the app can still cost data: keep a second copy of
+> your suite file. Unlocking takes master password plus second factor; the exceptions are the recovery code of the
+> emergency sheet (it opens everything on its own) and, on the phone, quick unlock with fingerprint or app PIN if
+> you switch it on. No review by third parties; reports are welcome via [`SECURITY.md`](SECURITY.md).
 Website: [www.ghulsuite.de/en](https://www.ghulsuite.de/en/) · [legal notice](https://www.ghulsuite.de/en/imprint.html) ·
 [privacy policy of the app](https://www.ghulsuite.de/en/privacy-app.html).
 

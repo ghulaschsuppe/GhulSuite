@@ -235,7 +235,7 @@ def render(text, t, v):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--out", required=True)
-    ap.add_argument("--preview", action="store_true", help="test server: noindex, no redirects, placeholders allowed")
+    ap.add_argument("--preview", action="store_true", help="local preview (tools/precheck.sh): noindex, no redirects, placeholders allowed")
     args = ap.parse_args()
     out = pathlib.Path(args.out)
     if out.exists():
@@ -310,7 +310,7 @@ def main():
     if args.preview:
         (out / "robots.txt").write_text("User-agent: *\nDisallow: /\n", encoding="utf-8")
         (out / ".htaccess").write_text(
-            "# Preview on the test server: not for search engines.\n"
+            "# A preview (built locally): not for search engines.\n"
             "Options -Indexes\nAddDefaultCharset utf-8\n"
             "<IfModule mod_headers.c>\n  Header always set X-Robots-Tag \"noindex, nofollow\"\n</IfModule>\n", encoding="utf-8")
     else:

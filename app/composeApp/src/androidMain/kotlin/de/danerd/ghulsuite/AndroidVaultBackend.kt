@@ -76,8 +76,30 @@ class AndroidVaultBackend(private val context: Context, private val activity: ()
     override fun storage(): VaultStorage = localStorage(File(context.filesDir, "suite").absolutePath)
 
     override suspend fun readSuiteFile(ref: SuiteFileRef): ByteArray? = withContext(Dispatchers.IO) {
+        val uri = io(ref)
+        // M6 (r5-g3): with a known size one buffer of exactly that size, not a growing one and a
+        // copy of it (a vault of 200 MB needed three times as much). Too little memory is not
+        // swallowed here: the app says so (AppState.run).
+        val known = fileSize(uri) ?: 0L
+        if (known > MAX_VAULT_FILE_BYTES) return@withContext null
+        if (known > 0) {
+            val data = ByteArray(known.toInt())
+            val read = runCatching {
+                context.contentResolver.openInputStream(uri)?.use { input ->
+                    var n = 0
+                    while (n < data.size) {
+                        val r = input.read(data, n, data.size - n)
+                        if (r < 0) break
+                        n += r
+                    }
+                    // Exactly as long as the provider said (else read again the slow way).
+                    n == data.size && input.read() < 0
+                } == true
+            }.getOrDefault(false)
+            if (read) return@withContext data
+        }
         runCatching {
-            context.contentResolver.openInputStream(io(ref))?.use { input ->
+            context.contentResolver.openInputStream(uri)?.use { input ->
                 // A vault file is read as a whole: at most as large as the core reads one.
                 val out = java.io.ByteArrayOutputStream()
                 val buf = ByteArray(64 * 1024)
@@ -121,8 +143,10 @@ class AndroidVaultBackend(private val context: Context, private val activity: ()
         created: Boolean,
         write: (java.io.OutputStream) -> Unit,
         check: (SuiteInput) -> Boolean,
+        wipeOld: Boolean,
+        onWipe: () -> Unit,
     ): Boolean {
-        safePlace(ref)?.let { return safeWrite(it, created, write, check) }
+        safePlace(ref)?.let { return safeWrite(it, created, write, check, wipeOld, onWipe) }
         val uri = Uri.parse(ref.id)
         var ok = false
         try {
@@ -144,7 +168,7 @@ class AndroidVaultBackend(private val context: Context, private val activity: ()
     override suspend fun writeSuiteFile(ref: SuiteFileRef, data: ByteArray): Boolean = withContext(Dispatchers.IO) {
         safePlace(ref)?.let { place ->
             return@withContext runCatching {
-                safeWrite(place, false, { it.write(data) }) { input -> input.stream.readBytes().contentEquals(data) }
+                safeWrite(place, false, { it.write(data) }, check = { input -> input.stream.readBytes().contentEquals(data) })
             }.getOrDefault(false)
         }
         // "wt": the document is truncated and written; the provider (a USB stick, a cloud app)
@@ -153,6 +177,28 @@ class AndroidVaultBackend(private val context: Context, private val activity: ()
             context.contentResolver.openOutputStream(Uri.parse(ref.id), "wt")?.use { it.write(data); it.flush() } != null
         }.getOrDefault(false) && readSuiteFile(ref)?.contentEquals(data) == true
     }
+
+    /**
+     * H12: the room where [ref] lies, where its document id is a path of the device's storage
+     * ("primary:Folder/GhulSuite.ghlzip", "1234-ABCD:…" for a stick or card): read with StatFs.
+     * Documents of other apps (a cloud app) cannot say: null, no check before writing.
+     */
+    override fun freeSpaceAt(ref: SuiteFileRef): Long? = runCatching {
+        val uri = Uri.parse(ref.id)
+        if (uri.authority != EXTERNAL_STORAGE) return@runCatching null
+        val docId = android.provider.DocumentsContract.getDocumentId(uri)
+        val volume = docId.substringBefore(':', "")
+        if (volume.isEmpty()) return@runCatching null
+        val root = if (volume == "primary") android.os.Environment.getExternalStorageDirectory() else File("/storage/$volume")
+        val dir = File(root, docId.substringAfter(':')).parentFile?.takeIf { it.exists() } ?: root
+        android.os.StatFs(dir.path).availableBytes
+    }.getOrNull()
+
+    /** Written over in place ("wt", no shared folder): the old file's room is freed first. */
+    override fun roomNeeded(ref: SuiteFileRef, size: Long): Long =
+        if (safeSave(ref) == de.danerd.ghulsuite.model.SafeSaveUi.SAFE) size
+        // The size as the provider tells it (opening a document of a cloud app could load it all).
+        else size - (runCatching { fileSize(io(ref)) }.getOrNull() ?: 0L).coerceAtLeast(0L)
 
     override fun safeSave(ref: SuiteFileRef): de.danerd.ghulsuite.model.SafeSaveUi = when {
         ref.id.isEmpty() || safePlace(ref) != null -> de.danerd.ghulsuite.model.SafeSaveUi.SAFE
@@ -268,10 +314,12 @@ class AndroidVaultBackend(private val context: Context, private val activity: ()
         created: Boolean,
         write: (java.io.OutputStream) -> Unit,
         check: (SuiteInput) -> Boolean,
+        wipeOld: Boolean = false,
+        onWipe: () -> Unit = {},
     ): Boolean {
         swapLock.lock()
         try {
-            return safeWriteLocked(place, created, write, check)
+            return safeWriteLocked(place, created, write, check, wipeOld, onWipe)
         } finally {
             swapLock.unlock()
         }
@@ -282,6 +330,8 @@ class AndroidVaultBackend(private val context: Context, private val activity: ()
         created: Boolean,
         write: (java.io.OutputStream) -> Unit,
         check: (SuiteInput) -> Boolean,
+        wipeOld: Boolean,
+        onWipe: () -> Unit,
     ): Boolean {
         val r = context.contentResolver
         val target = place.doc(place.name)
@@ -335,8 +385,16 @@ class AndroidVaultBackend(private val context: Context, private val activity: ()
             // Noted before the old file goes: if the device goes off now, the next access knows
             // that "<name>" is the new, complete file and ".alt" may go.
             noteSwap(place.id(place.name))
-            old?.let { runCatching { android.provider.DocumentsContract.deleteDocument(r, it) } }
-            noteSwap("")
+            // G2-M2: after a change of the protection the old file (openable with what is gone)
+            // is overwritten with zeros first: deleted only, it stays in the free space of the
+            // stick. The new file is in place and checked by now.
+            if (old != null && wipeOld) {
+                onWipe()
+                runCatching { overwriteWithZeros(old) }
+            }
+            // N3: the note stays until the old file is really gone (the next access removes it).
+            val gone = old == null || runCatching { android.provider.DocumentsContract.deleteDocument(r, old) }.getOrDefault(false)
+            if (gone) noteSwap("")
             ok = true
             return true
         } finally {
@@ -344,6 +402,23 @@ class AndroidVaultBackend(private val context: Context, private val activity: ()
             // A document made just for this that could not be written stays no empty file.
             if (!ok && created && exists(target) && !exists(place.doc(place.name + ".alt"))) {
                 runCatching { if (fileSize(target) == 0L) android.provider.DocumentsContract.deleteDocument(r, target) }
+            }
+        }
+    }
+
+    /** Writes zeros over the whole document [uri] (in place, without making it shorter first). */
+    private fun overwriteWithZeros(uri: Uri) {
+        context.contentResolver.openFileDescriptor(uri, "rw")?.use { pfd ->
+            java.io.FileOutputStream(pfd.fileDescriptor).use { out ->
+                val zeros = ByteArray(1 shl 20)
+                var left = pfd.statSize.takeIf { it >= 0 } ?: 0L
+                while (left > 0) {
+                    val n = minOf(left, zeros.size.toLong()).toInt()
+                    out.write(zeros, 0, n)
+                    left -= n
+                }
+                out.flush()
+                runCatching { out.fd.sync() }
             }
         }
     }
@@ -370,7 +445,8 @@ class AndroidVaultBackend(private val context: Context, private val activity: ()
     override fun devicePref(key: String): String? = prefs.getString(key, null)
 
     override fun setDevicePref(key: String, value: String) {
-        prefs.edit().putString(key, value).apply()
+        // N4: on the disk at once (the place of the suite file must be known if the app ends).
+        prefs.edit().putString(key, value).commit()
     }
 
     override fun kdfMaxMib(): Int {
@@ -394,7 +470,8 @@ class AndroidVaultBackend(private val context: Context, private val activity: ()
 
     /**
      * Panic lock: locks the app and removes fingerprint and app PIN, so only the master password
-     * opens it again. Calendar reminders keep working: the panic lock closes the app.
+     * and the second factor open it again. Calendar reminders keep working, unless the user chose
+     * that the panic lock deletes them too (M12; the next unlock sets them again).
      */
     override fun panicLock() {
         // Nothing is written back first (a GhulDocs vault open on its own locks at once).
@@ -405,9 +482,13 @@ class AndroidVaultBackend(private val context: Context, private val activity: ()
             panicking = false
         }
         quick.disableAll()
+        if (settings.panicClearReminders) runCatching { cal.clearReminders() }
     }
 
     override val canShareToApps: Boolean = true
+
+    /** H4 on Android: packages, terminal scripts and disk images (web pages open in the browser's sandbox). */
+    override fun refusesToOpen(name: String): Boolean = de.danerd.ghulsuite.ui.isRunnableOnAndroid(name)
 
     /** Android's share sheet: a copy in the app's cache (deleted on lock) for the chosen app. */
     override suspend fun shareToApps(name: String, mime: String, data: ByteArray): Boolean =
@@ -418,9 +499,14 @@ class AndroidVaultBackend(private val context: Context, private val activity: ()
      * or is cancelled removes the half copy at once; nothing is handed over then.
      */
     override suspend fun shareStreamToApps(name: String, mime: String, write: suspend (de.danerd.ghulsuite.model.ByteSink) -> Unit): Boolean {
+        // Packages and other runnable files are not handed over (H4), whoever calls.
+        val fileName = safeFileName(name, mutableSetOf())
+        if (refusesToOpen(name) || refusesToOpen(fileName)) {
+            throw VaultException(VaultErrorKind.INVALID_INPUT, "This kind of file is not opened with another app.")
+        }
         val target = withContext(Dispatchers.IO) {
             val dir = File(context.cacheDir, "shared").apply { deleteRecursively(); mkdirs() }
-            File(dir, safeFileName(name, mutableSetOf()))
+            File(dir, fileName)
         }
         val out = withContext(Dispatchers.IO) { java.io.BufferedOutputStream(java.io.FileOutputStream(target), 1 shl 20) }
         var complete = false
@@ -439,7 +525,7 @@ class AndroidVaultBackend(private val context: Context, private val activity: ()
         }
         val uri = androidx.core.content.FileProvider.getUriForFile(context, context.packageName + ".files", target)
         // "Open with": the apps that show this type (not the share targets).
-        val intent = Intent(Intent.ACTION_VIEW).setDataAndType(uri, mime)
+        val intent = Intent(Intent.ACTION_VIEW).setDataAndType(uri, viewMime(fileName))
         intent.clipData = ClipData.newRawUri("", uri)
         intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
         val chooser = Intent.createChooser(intent, null).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_GRANT_READ_URI_PERMISSION)
@@ -527,12 +613,16 @@ class AndroidVaultBackend(private val context: Context, private val activity: ()
         context.getString(R.string.bio_cancel),
     )
 
-    override suspend fun enableBiometricUnlock(password: String) {
+    // H6: both factors of now; a security key is touched first in a connection of its own, then
+    // the core takes the password alone once (see confirmedProof).
+    override suspend fun enableBiometricUnlock(proof: de.danerd.ghulsuite.model.FactorProofUi, hours: Int, onTouchNeeded: () -> Unit) {
+        val p = confirmedProof(proof, onTouchNeeded).core()
         val (t, s, c) = bioTexts()
-        quick.enableBiometric(password, t, s, c)
+        quick.enableBiometric(p, hours, t, s, c)
     }
 
-    override suspend fun enablePinUnlock(password: String, pin: String) = quick.enablePin(password, pin)
+    override suspend fun enablePinUnlock(proof: de.danerd.ghulsuite.model.FactorProofUi, pin: String, hours: Int, onTouchNeeded: () -> Unit) =
+        quick.enablePin(confirmedProof(proof, onTouchNeeded).core(), pin, hours)
 
     override fun disableQuickUnlock() = quick.disableAll()
 
@@ -649,4 +739,18 @@ private class LazyOutput(private val open: () -> java.io.OutputStream) : java.io
     override fun close() {
         opened?.close()
     }
+}
+
+/** The Android package type: never handed to "Open with" (it would start the package installer). */
+private const val APK_MIME = "application/vnd.android.package-archive"
+
+/**
+ * The type "Open with" hands over (H4): from the ending of the name, never the type a (possibly
+ * foreign) package stored, and never that of an Android package.
+ */
+internal fun viewMime(fileName: String): String {
+    val ending = de.danerd.ghulsuite.ui.openEnding(fileName)
+    val mime = android.webkit.MimeTypeMap.getSingleton().getMimeTypeFromExtension(ending)
+        ?: de.danerd.ghulsuite.ui.mimeOf(fileName)
+    return if (mime.equals(APK_MIME, ignoreCase = true)) "application/octet-stream" else mime
 }

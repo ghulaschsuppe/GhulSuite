@@ -28,6 +28,7 @@ import androidx.compose.material.icons.filled.AddCircle
 import androidx.compose.material.icons.filled.CloudDownload
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Folder
+import androidx.compose.material.icons.filled.Key
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -86,6 +87,8 @@ fun SetupScreen(state: AppState) {
     var choose by remember { mutableStateOf(false) }
     var vaultInfo by remember { mutableStateOf<ContainerInfoUi?>(null) }
     var suiteFile by remember { mutableStateOf<PickedSuiteFile?>(null) }
+    // M31: "Open with emergency sheet": the picked file opens with the field of the code at once.
+    var withSheet by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     val backend = state.backend
     val scope = rememberCoroutineScope()
@@ -102,6 +105,13 @@ fun SetupScreen(state: AppState) {
     val openSuiteFile = rememberOpenSuiteFile { ref ->
         suiteFile = PickedSuiteFile(ref)
         error = null
+        withSheet = false
+        flow = Flow.OPEN_FILE
+    }
+    val openWithSheet = rememberOpenSuiteFile { ref ->
+        suiteFile = PickedSuiteFile(ref)
+        error = null
+        withSheet = true
         flow = Flow.OPEN_FILE
     }
     // With access to write: a vault opened on its own goes back into its file.
@@ -173,6 +183,10 @@ fun SetupScreen(state: AppState) {
                         error = null
                         openFile()
                     }
+                    StartOption(Icons.Filled.Key, paletteColor(4), stringResource(Res.string.start_open_sheet), stringResource(Res.string.start_open_sheet_text)) {
+                        error = null
+                        openWithSheet()
+                    }
                 }
                 HintText(stringResource(Res.string.start_footer))
                 ErrorText(error)
@@ -188,6 +202,7 @@ fun SetupScreen(state: AppState) {
             Flow.OPEN_FILE -> suiteFile?.let { f ->
                 OpenSuiteFile(
                     state, f, onOpened = { suiteFile = null; flow = Flow.START }, onCancel = { suiteFile = null; flow = Flow.START },
+                    startWithCode = withSheet,
                 )
             }
 
@@ -442,15 +457,19 @@ fun RecoveryCodeView(code: String) {
  * Both factors of now, before a change of the protection: the master password plus the PIN of a
  * security key or a key file. The choice of key or key file is always offered.
  */
-class ProofInput(withKey: Boolean) {
+class ProofInput(withKey: Boolean, val passwordOnly: Boolean = false) {
     var password by mutableStateOf("")
     var withKey by mutableStateOf(withKey)
     var pin by mutableStateOf("")
     var keyfile by mutableStateOf<PickedFile?>(null)
 
-    fun ok(state: AppState): Boolean = password.isNotEmpty() && (if (withKey) keyPinOk(state, pin) else keyfile != null)
+    fun ok(state: AppState): Boolean = password.isNotEmpty() && (passwordOnly || if (withKey) keyPinOk(state, pin) else keyfile != null)
 
-    fun proof() = de.danerd.ghulsuite.model.FactorProofUi(password, if (withKey) pin else null, if (withKey) null else keyfile?.bytes)
+    fun proof() = if (passwordOnly) {
+        de.danerd.ghulsuite.model.FactorProofUi(password, null, null)
+    } else {
+        de.danerd.ghulsuite.model.FactorProofUi(password, if (withKey) pin else null, if (withKey) null else keyfile?.bytes)
+    }
 
     fun clear() {
         password = ""
@@ -460,11 +479,19 @@ class ProofInput(withKey: Boolean) {
 }
 
 @Composable
-fun rememberProofInput(state: AppState): ProofInput = remember { ProofInput(state.backend.settings.factorKey) }
+fun rememberProofInput(state: AppState): ProofInput =
+    // H3: opened with the recovery code, the lost factors cannot be shown: until the lock the core
+    // takes the new master password alone.
+    remember { ProofInput(state.backend.settings.factorKey, state.backend.openedWithRecoveryCode()) }
 
 /** The fields of [ProofInput]: master password, then key (with its PIN) or key file. */
 @Composable
 fun ProofFields(state: AppState, input: ProofInput, onChange: () -> Unit = {}) {
+    if (input.passwordOnly) {
+        Hint(stringResource(Res.string.proof_recovered_hint))
+        SecretTextField(input.password, { input.password = it; onChange() }, stringResource(Res.string.l_master_password))
+        return
+    }
     Hint(stringResource(Res.string.proof_hint))
     SecretTextField(input.password, { input.password = it; onChange() }, stringResource(Res.string.l_master_password))
     FactorChoice(input.withKey) { input.withKey = it; state.backend.settings.factorKey = it; onChange() }

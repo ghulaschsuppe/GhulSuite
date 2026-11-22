@@ -28,7 +28,8 @@ use super::docs::{content_files, parse_entry_name, remove_all_contents, stage_en
 use super::error::{GhulError, Result};
 use super::storage::StorageError;
 use super::suite::{
-    is_vault_file, now_ms, parse_keyfile, put_setting, second_factor, setting, GhulSuite, ProtectionInfo, SUITE_FILE,
+    is_vault_file, now_ms, parse_keyfile, put_setting, second_factor, setting, FactorProof, GhulSuite, ProtectionInfo,
+    SUITE_FILE,
 };
 use super::zipstream::{zip_len, EntryInfo, ZipError, ZipReader, ZipWriter, CHUNK};
 use crate::vault::format::MAX_FILE_LEN;
@@ -47,6 +48,8 @@ const SEEN_FILE: &str = "archive-seen.json";
 const UNSAVED_FILE: &str = "archive-unsaved";
 /// The message for anything that is no `.ghlzip` (translated by the app).
 const NOT_A_SUITE_FILE: &str = "not a GhulSuite file";
+/// M10: a suite file or GhulDocs package that ends early (not written completely).
+pub const INCOMPLETE_FILE: &str = "the suite file is incomplete";
 const DOCS_PACKAGE_NOT_SUITE: &str = "this is a GhulDocs package, not a suite file";
 const SUITE_NOT_DOCS_PACKAGE: &str = "this is a suite file, not a GhulDocs package";
 /// A suite file with more GhulDocs vaults than a suite may have is invalid.
@@ -71,9 +74,9 @@ const MAX_ANCESTORS: usize = 1024;
 
 /// While a suite file replaces the working copy (in the local folder): what was there before, so
 /// that a device that went off in the middle finds the state before again at the next start.
-const REPLACE_JOURNAL: &str = "replace-journal.json";
+pub(super) const REPLACE_JOURNAL: &str = "replace-journal.json";
 /// The files of the working copy before, kept until the replacing is complete.
-const REPLACE_OLD_DIR: &str = "replace-old";
+pub(super) const REPLACE_OLD_DIR: &str = "replace-old";
 
 /// See [`REPLACE_JOURNAL`].
 #[derive(Serialize, Deserialize, Default)]
@@ -82,7 +85,9 @@ struct ReplaceJournal {
     old_files: Vec<String>,
     /// The content folders of GhulDocs before (`docs-<id>`).
     old_docs: Vec<String>,
-    /// The folder they are moved aside to (absolute), once it exists.
+    /// The folder they are moved aside to, once it exists: its name in the staging folder of the
+    /// content root (round 6: never an absolute path, a portable data folder may come back under
+    /// another drive letter). Journals of before held the absolute path; both are read.
     aside: Option<String>,
 }
 
@@ -91,6 +96,20 @@ thread_local! {
     /// Tests: the replacing stops after this many files written, as if the device went off.
     pub(crate) static CRASH_AFTER_WRITES: std::cell::Cell<Option<usize>> = const { std::cell::Cell::new(None) };
 }
+
+#[cfg(test)]
+thread_local! {
+    /// Tests: the next rollback of a replace that failed fails too (e.g. the storage went away).
+    pub(crate) static ROLLBACK_FAILS: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+    /// Tests: deleting the working copy fails after it began (a file held by another program).
+    pub(crate) static DELETE_FAILS: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+    /// Tests: putting back the state before an unfinished replace fails (while set).
+    pub(crate) static RECOVER_FAILS: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// A replace of the working copy could not be finished and its state before not be put back yet
+/// (translated by the app: restart the app, free some space).
+pub const REPLACE_UNFINISHED: &str = "an earlier opening of a suite file could not be finished";
 
 /// Tests: the device "went off" (see [`CRASH_AFTER_WRITES`]).
 #[cfg(test)]
@@ -319,6 +338,9 @@ pub(super) struct Pending {
     staged: Option<Staging>,
     /// The id of its header container (see [`StateRef::file`]).
     file_id: [u8; 16],
+    /// The content change counter of the working copy when it was checked (M6: what was unsaved
+    /// then is what the user was told about; see `content_change`).
+    change: u64,
 }
 
 /// An [`ArchiveSource`] as a reader.
@@ -412,8 +434,21 @@ pub(super) fn reporter(progress: Option<Arc<dyn ArchiveProgress>>, total: u64) -
 /// What is wrong stays out of the message: the app names it in plain words.
 pub(super) fn zip_error(e: ZipError) -> GhulError {
     match e {
-        ZipError::Io(e) => GhulError::Storage { msg: e.to_string() },
+        ZipError::Io(e) => super::error::storage_message(e.to_string()),
+        // M10: it began as a GhulSuite file (its first entry was there) and ended early: a file
+        // that was not written completely, not another kind of file.
+        ZipError::Truncated => GhulError::InvalidInput { msg: INCOMPLETE_FILE.into() },
         _ => GhulError::InvalidInput { msg: NOT_A_SUITE_FILE.into() },
+    }
+}
+
+/// An error before the first entry of a file was read: an early end says nothing about the
+/// file being ours (see [`zip_error`]).
+pub(super) fn first_entry_error(e: ZipError) -> GhulError {
+    if matches!(e, ZipError::Truncated) {
+        not_a_suite_file()
+    } else {
+        zip_error(e)
     }
 }
 
@@ -460,7 +495,8 @@ pub(super) fn read_container(z: &mut ZipReader<SourceReader>, e: &EntryInfo) -> 
 
 /// The header, the first entry of a `.ghlzip`.
 fn read_header(z: &mut ZipReader<SourceReader>) -> Result<LockedContainer> {
-    let e = z.next_entry().map_err(zip_error)?.ok_or_else(not_a_suite_file)?;
+    // Not even a first entry: nothing says this is a GhulSuite file.
+    let e = z.next_entry().map_err(first_entry_error)?.ok_or_else(not_a_suite_file)?;
     let (data, _) = read_container(z, &e)?;
     let l = parse_first(&data)?;
     if l.kind() == ContainerKind::Docs && e.name.ends_with(".ghldoc") {
@@ -533,12 +569,18 @@ fn read_checked(
     while let Some(e) = z.next_entry().map_err(zip_error)? {
         let name = e.name.clone();
         if let Some((vid, content)) = parse_entry_name(&name) {
-            let expected = docs.get_mut(&vid).ok_or_else(|| mismatch("a document without its vault"))?;
+            if !docs.contains_key(&vid) {
+                return Err(mismatch("a document without its vault"));
+            }
             if staging.is_none() {
                 let root =
                     root.ok_or_else(|| GhulError::Storage { msg: "documents cannot be stored in this folder".into() })?;
+                // H12: room for every document before the first one is written (the indexes of
+                // all GhulDocs vaults come before their documents).
+                super::error::check_free_space(root, docs.values().map(Expected::bytes).sum())?;
                 staging = Some(Staging::new(root)?);
             }
+            let expected = docs.get_mut(&vid).ok_or_else(|| mismatch("a document without its vault"))?;
             stage_entry(z, &e, &vid, &content, expected, staging.as_ref().ok_or(GhulError::NotFound)?)?;
             continue;
         }
@@ -566,7 +608,7 @@ fn read_checked(
         }
         match c.kind() {
             ContainerKind::Suite => suite_epoch = Some(setting::<u64>(&c, super::suite::EPOCH_KEY)),
-            ContainerKind::Docs if docs.insert(f.id.clone(), Expected::of(&c)?).is_some() => {
+            ContainerKind::Docs if docs.insert(f.id.clone(), Expected::of_suite_file(&c)?).is_some() => {
                 return Err(mismatch("a vault twice"));
             }
             _ => {}
@@ -701,6 +743,7 @@ impl GhulSuite {
     /// This device has `state` now (opened or saved; also an older one or a branch the user
     /// took). The counter only grows: a later save goes above everything seen.
     fn note_archive_seen(&self, suite_id: &[u8; 16], state: &StateRef, epoch: u64, saved: i64) {
+        let _one = self.seen_guard();
         let mut all = self.seen_all();
         let e = all.entry(crate::kdf::hex(suite_id)).or_default();
         e.counter = e.counter.max(state.counter);
@@ -721,6 +764,7 @@ impl GhulSuite {
     /// an earlier one (a file saved with it elsewhere later is older, not newer).
     pub(super) fn note_protection_left(&self, suite_id: &[u8; 16]) -> Result<()> {
         let Ok(a) = self.anchor() else { return Ok(()) };
+        let _one = self.seen_guard();
         let mut all = self.seen_all();
         let e = all.entry(crate::kdf::hex(suite_id)).or_default();
         note_protection(e, protection_print(a.header()));
@@ -730,6 +774,7 @@ impl GhulSuite {
     /// The protection of a suite changed on this device (its epoch is `epoch` now).
     /// It must be noted: without it, a file with the older protection would open again.
     pub(super) fn note_epoch(&self, suite_id: &[u8; 16], epoch: u64) -> Result<()> {
+        let _one = self.seen_guard();
         let mut all = self.seen_all();
         let e = all.entry(crate::kdf::hex(suite_id)).or_default();
         if epoch <= e.epoch {
@@ -737,6 +782,12 @@ impl GhulSuite {
         }
         e.epoch = epoch;
         self.try_write_seen(&all)
+    }
+
+    /// Read-modify-write of the device's notes one at a time (M5): two calls (a save noting its
+    /// state, a change of the protection noting its epoch) never write over each other.
+    fn seen_guard(&self) -> std::sync::MutexGuard<'_, ()> {
+        self.seen_lock.lock().unwrap_or_else(|e| e.into_inner())
     }
 
     fn write_seen(&self, all: &BTreeMap<String, Seen>) {
@@ -764,6 +815,16 @@ impl GhulSuite {
 
     fn unsaved(&self) -> bool {
         self.local_dir.join(UNSAVED_FILE).exists()
+    }
+
+    /// M6: grows with every change of the content (a vault file written or removed), not with a
+    /// write of the suite file alone (settings, the state noted after a save).
+    pub(super) fn content_change(&self) -> u64 {
+        self.content_changes.load(std::sync::atomic::Ordering::SeqCst)
+    }
+
+    pub(super) fn note_content_change(&self) {
+        self.content_changes.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
     }
 
     /// The change counter of the working copy (grows with every write of a container).
@@ -874,6 +935,10 @@ impl GhulSuite {
     /// old copy is put back. The content files of GhulDocs move as whole folders: the old ones
     /// aside, the checked ones (`staged`) into place, the old ones removed at the end.
     fn replace_working_copy(&self, files: &[(String, Vec<u8>)], staged: Option<&Staging>) -> Result<()> {
+        let _one = self.replace_lock.lock().unwrap_or_else(|e| e.into_inner());
+        // An earlier replace that could not be finished: its state before first (M1 of round 5);
+        // its copies must not be overwritten by this one.
+        self.finish_earlier_replace_held()?;
         let mut before = Vec::new();
         for n in self.storage.list()? {
             if n == SUITE_FILE || is_vault_file(&n) {
@@ -897,7 +962,7 @@ impl GhulSuite {
         };
         self.write_journal(&journal)?;
         let aside = self.docs_aside(staged, &mut |dir| {
-            journal.aside = Some(dir.to_string_lossy().into_owned());
+            journal.aside = dir.file_name().map(|n| n.to_string_lossy().into_owned());
             self.write_journal(&journal)
         })?;
         let new: Vec<(String, Vec<u8>)> = files.iter().filter(|(n, _)| n != HEADER_FILE).cloned().collect();
@@ -910,23 +975,70 @@ impl GhulSuite {
                 }
                 return Err(e);
             }
-            // Half replaced is neither state: back to the one before.
-            let _ = self.put_files(&before, &new);
+            // Half replaced is neither state: back to the one before. The journal goes only once
+            // that worked (M3); otherwise it stays with the folders, and the next start puts the
+            // state before back (`recover_replace`).
+            if self.put_files(&before, &new).is_err() || self.rollback_fails() {
+                if let Some(a) = aside {
+                    std::mem::forget(a);
+                }
+                return Err(e);
+            }
             if let Some(a) = aside {
                 a.back()?;
             }
             self.end_journal();
             return Err(e);
         }
-        // Complete: the journal goes first, then what it kept (the old documents with `aside`).
+        // Complete: the journal goes first, then what it kept (the old documents with `aside`),
+        // and every copy of the working copy before (H7: it may have had another protection).
         self.end_journal();
         drop(aside);
+        self.purge_old_copies();
         Ok(())
+    }
+
+    /// Tests: the rollback of a replace that failed fails as well (see [`ROLLBACK_FAILS`]).
+    fn rollback_fails(&self) -> bool {
+        #[cfg(test)]
+        return ROLLBACK_FAILS.with(|c| c.replace(false));
+        #[cfg(not(test))]
+        false
+    }
+
+    /// A replace of the working copy that could not be finished (its journal is still there, e.g.
+    /// its way back failed): the state before is put back now, before anything else is unlocked
+    /// or replaced (round 5, M1). If that fails again, the call is refused with
+    /// [`REPLACE_UNFINISHED`] and nothing is changed or deleted.
+    pub(super) fn finish_earlier_replace(&self) -> Result<()> {
+        let _one = self.replace_lock.lock().unwrap_or_else(|e| e.into_inner());
+        self.finish_earlier_replace_held()
+    }
+
+    fn finish_earlier_replace_held(&self) -> Result<()> {
+        if !self.local_dir.join(REPLACE_JOURNAL).exists() {
+            return Ok(());
+        }
+        #[cfg(test)]
+        if RECOVER_FAILS.with(std::cell::Cell::get) {
+            return Err(GhulError::Storage { msg: REPLACE_UNFINISHED.into() });
+        }
+        self.recover_replace().map_err(|e| {
+            eprintln!("GhulSuite: the working copy before a replace could not be put back: {e}");
+            GhulError::Storage { msg: REPLACE_UNFINISHED.into() }
+        })
     }
 
     fn write_journal(&self, journal: &ReplaceJournal) -> Result<()> {
         let json = serde_json::to_vec(journal).map_err(|e| GhulError::Storage { msg: e.to_string() })?;
         super::storage::write_atomic(&self.local_dir, REPLACE_JOURNAL, &json)
+    }
+
+    /// Before a new suite is created in an empty folder: a journal left there belongs to a suite
+    /// that is gone (round 6, M1).
+    pub(super) fn discard_journal(&self) {
+        let _one = self.replace_lock.lock().unwrap_or_else(|e| e.into_inner());
+        self.end_journal();
     }
 
     fn end_journal(&self) {
@@ -944,9 +1056,22 @@ impl GhulSuite {
         let Ok(data) = std::fs::read(&path) else { return Ok(()) };
         let journal: ReplaceJournal =
             serde_json::from_slice(&data).map_err(|e| GhulError::Storage { msg: format!("replace journal: {e}") })?;
-        // The documents: what was moved aside goes back, what came in goes.
+        // The documents: what was moved aside goes back, what came in goes. The folder they were
+        // moved to must be found (by its name, under the content root of now); if it is not, the
+        // journal stays and nothing is changed (round 6, M2).
+        let aside = match (&journal.aside, self.content_root()) {
+            (Some(a), Ok(root)) => {
+                let name = std::path::Path::new(a).file_name().map(|n| n.to_owned()).unwrap_or_default();
+                let p = super::docs::staging_root(&root).join(name);
+                if !p.is_dir() && !journal.old_docs.is_empty() {
+                    return Err(GhulError::Storage { msg: "the documents before the replace were not found".into() });
+                }
+                Some(p)
+            }
+            _ => None,
+        };
         if let Ok(root) = self.content_root() {
-            if let Some(aside) = journal.aside.as_deref().map(std::path::PathBuf::from) {
+            if let Some(aside) = &aside {
                 for n in &journal.old_docs {
                     let kept = aside.join(n);
                     if kept.is_dir() {
@@ -972,11 +1097,27 @@ impl GhulSuite {
                 self.storage.delete(n)?;
             }
         }
-        if let Some(aside) = journal.aside {
+        if let Some(aside) = aside {
             let _ = std::fs::remove_dir_all(aside);
         }
         self.end_journal();
         Ok(())
+    }
+
+    /// Folders of old documents of a replace (marked [`super::docs::JOURNAL_MARK`]) whose
+    /// journal is gone: the replace ended (or was put back) and the stop came before the folder
+    /// was removed (round 5, M2). Only this suite knows where its journal is, so it tidies them,
+    /// not `tidy_staging`.
+    pub(super) fn tidy_asides(&self) {
+        if self.local_dir.join(REPLACE_JOURNAL).exists() {
+            return;
+        }
+        let Ok(root) = self.content_root() else { return };
+        for e in std::fs::read_dir(super::docs::staging_root(&root)).into_iter().flatten().flatten() {
+            if e.path().join(super::docs::JOURNAL_MARK).exists() {
+                let _ = std::fs::remove_dir_all(e.path());
+            }
+        }
     }
 
     /// Moves the content folders of the working copy aside and the staged ones into place
@@ -997,8 +1138,9 @@ impl GhulSuite {
             s.verify()?;
         }
         let old = Staging::new(&root)?;
-        // Not tidied away at the next start while the journal still needs it.
-        std::fs::write(old.path().join(super::docs::KEEP_MARK), b"")?;
+        // Not tidied away while the journal still needs it; once the journal is gone (also after
+        // a stop between the end of the journal and the removal of this folder), it is.
+        std::fs::write(old.path().join(super::docs::JOURNAL_MARK), REPLACE_JOURNAL.as_bytes())?;
         noted(old.path())?;
         let mut aside = Aside { root: root.clone(), old, moved_in: Vec::new(), moved_out: Vec::new() };
         let result = (|| {
@@ -1090,6 +1232,7 @@ impl GhulSuite {
         progress: Option<Arc<dyn ArchiveProgress>>,
     ) -> Result<ArchiveCheck> {
         let gen = self.pending_gen_now();
+        let change = self.content_change();
         let password = Zeroizing::new(password);
         let pin = pin.map(Zeroizing::new);
         let mut z = suite_zip(source, progress);
@@ -1109,7 +1252,7 @@ impl GhulSuite {
         let check = self.check_of(&header, &suite_id, false)?;
         self.keep_pending(
             gen,
-            Pending { files, header, suite_id, recovery: None, keys: Some((pk, s)), staged, file_id },
+            Pending { files, header, suite_id, recovery: None, keys: Some((pk, s)), staged, file_id, change },
         )?;
         Ok(check)
     }
@@ -1125,8 +1268,11 @@ impl GhulSuite {
         progress: Option<Arc<dyn ArchiveProgress>>,
     ) -> Result<ArchiveCheck> {
         let gen = self.pending_gen_now();
+        let change = self.content_change();
         let code = Zeroizing::new(code);
         let parsed = RecoveryCode::parse(&code)?;
+        // The new password follows the rules before anything is read or replaced.
+        super::tools::check_master_password(&new_password)?;
         let mut z = suite_zip(source, progress);
         let locked = read_header(&mut z)?;
         let file_id = locked.header().container_id;
@@ -1143,6 +1289,7 @@ impl GhulSuite {
                 keys: None,
                 staged,
                 file_id,
+                change,
             },
         )?;
         Ok(check)
@@ -1154,70 +1301,34 @@ impl GhulSuite {
     }
 
     /// Takes the checked file: the working copy is replaced (the old one stays one step back),
-    /// this device's data of the old state goes, and the suite is open.
+    /// this device's data of the old state goes, and the suite is open. A file of another suite
+    /// than the one on this device (`ArchiveRelation::OtherSuite`) replaces that suite: only with
+    /// its proof, `archive_accept_replacing` (H5); here it is refused with
+    /// [`OTHER_SUITE_NEEDS_PROOF`]. Refused while documents are added or copied
+    /// ([`DOCS_BUSY`]) and when the working copy changed since the file was checked
+    /// ([`CHANGED_SINCE_CHECK`], M6): the checked file stays for another try. A lock during the
+    /// call wins (H10): the files are replaced, but the suite stays locked (`Locked`).
     pub fn archive_accept(&self) -> Result<()> {
-        self.wiped.store(false, std::sync::atomic::Ordering::SeqCst);
-        let p = self.pending.lock().unwrap_or_else(|e| e.into_inner()).take().ok_or(GhulError::NotFound)?;
-        // Checked again right before replacing: another file may have been opened meanwhile.
-        self.relation(&p.header, &p.suite_id)?;
-        // The checked documents are all still there (nothing is locked or removed otherwise).
-        if let Some(s) = &p.staged {
-            s.verify()?;
-        }
-        self.lock();
-        self.finish_lock();
-        // Quick unlock holds the password key and the factor secret of the working copy. They stay
-        // the same for a newer state of the same suite with the same protection: the same KDF
-        // (salt) and the same slots, compared in the headers themselves (two devices can each
-        // reach the same epoch with different changes). Anything else, or the recovery code:
-        // they go.
-        let same_header = || -> bool {
-            let Ok(old) = self.anchor() else { return false };
-            let Some((_, data)) = p.files.iter().find(|(n, _)| n == SUITE_FILE) else { return false };
-            let Ok(new) = LockedContainer::parse(data) else { return false };
-            protection_print(old.header()) == protection_print(new.header())
-        };
-        let same_protection = p.recovery.is_none()
-            && self.working_suite_id() == Some(p.suite_id)
-            && self.seen_all().get(&crate::kdf::hex(&p.suite_id)).is_some_and(|s| s.epoch == p.header.epoch)
-            && same_header();
-        if !same_protection {
-            self.wipe_device_data();
-            self.wiped.store(true, std::sync::atomic::Ordering::SeqCst);
-        }
-        *self.built.lock().unwrap_or_else(|e| e.into_inner()) = None;
-        self.replace_working_copy(&p.files, p.staged.as_ref())?;
-        match (&p.recovery, p.keys) {
-            (Some((code, new_password)), _) => {
-                self.unlock_with_recovery_code(code.to_string(), new_password.to_string())?
-            }
-            (None, Some((pk, s))) => {
-                let data = &p.files.iter().find(|(n, _)| n == SUITE_FILE).ok_or(GhulError::NoVault)?.1;
-                let suite = LockedContainer::parse(data)?.unlock(&pk, &s)?;
-                self.finish_unlock(pk, suite, true)?;
-            }
-            _ => return Err(GhulError::NotFound),
-        }
-        let accepted = StateRef {
-            state: p.header.state.clone(),
-            counter: p.header.counter,
-            previous: String::new(),
-            ancestors: p.header.ancestors.clone(),
-            complete: p.header.complete,
-            file: crate::kdf::hex(&p.file_id),
-        };
-        self.with_open(|o| {
-            put_setting(&mut o.suite, STATE_KEY, &accepted)?;
-            let epoch = o.epoch();
-            self.save_container(&mut o.suite, SUITE_FILE)?;
-            self.note_archive_seen(&p.suite_id, &accepted, epoch.max(p.header.epoch), p.header.time);
-            Ok(())
-        })?;
-        // After the recovery code everything was written anew: that is a change to save.
-        if p.recovery.is_none() {
-            self.clear_unsaved();
-        }
-        Ok(())
+        self.accept_pending(None)
+    }
+
+    /// [`Self::archive_accept`] for a file of another suite (`OtherSuite`): it deletes the suite
+    /// on this device, so both factors of that suite are needed (`proof`: its master password
+    /// plus a key file or the PIN of a security key touched through `transport`), checked
+    /// against its files without opening it.
+    pub fn archive_accept_replacing(
+        &self,
+        proof: FactorProof,
+        transport: Option<Arc<dyn HidTransport>>,
+        listener: Option<Arc<dyn FidoListener>>,
+    ) -> Result<()> {
+        self.accept_pending(Some(ExistingProof::Factors(&proof, transport.as_ref(), listener.as_ref())))
+    }
+
+    /// [`Self::archive_accept_replacing`] with the recovery code of the suite on this device.
+    pub fn archive_accept_replacing_with_code(&self, code: String) -> Result<()> {
+        let code = Zeroizing::new(code);
+        self.accept_pending(Some(ExistingProof::Code(&code)))
     }
 
     /// Deletes the suite on this device for good (to set up a new one in its place): it is
@@ -1226,45 +1337,27 @@ impl GhulSuite {
     /// folders included), every vault file and the suite file last. Suite files (`.ghlzip`)
     /// elsewhere are not touched. If a file cannot be deleted, the error says so and what is
     /// left can be deleted again.
-    pub fn delete_working_copy(&self) -> Result<()> {
-        let suite_id = self.working_suite_id();
-        self.lock();
-        self.finish_lock();
-        *self.built.lock().unwrap_or_else(|e| e.into_inner()) = None;
-        super::quick::delete_all(&self.local_dir);
-        for e in std::fs::read_dir(&self.local_dir).into_iter().flatten().flatten() {
-            let n = e.file_name().to_string_lossy().into_owned();
-            if n.starts_with("quick-") && n.ends_with(".stamp") {
-                let _ = std::fs::remove_file(e.path());
-            }
-        }
-        if let Some(id) = suite_id {
-            let mut all = self.seen_all();
-            if all.remove(&crate::kdf::hex(&id)).is_some() {
-                self.write_seen(&all);
-            }
-        }
-        self.clear_unsaved();
-        if let Ok(root) = self.content_root() {
-            remove_all_contents(&root)?;
-        }
-        let names = self.storage.list()?;
-        for n in names.iter().filter(|n| *n != SUITE_FILE && (is_vault_file(n) || *n == HEADER_FILE)) {
-            self.storage.delete(n.clone())?;
-        }
-        self.storage.delete(SUITE_FILE.to_owned())?;
-        // Temporary files of an earlier write that did not end.
-        if let Ok(root) = self.content_root() {
-            for e in std::fs::read_dir(&root).into_iter().flatten().flatten() {
-                let n = e.file_name().to_string_lossy().into_owned();
-                let stem = n.trim_start_matches('.').trim_end_matches(".tmp").trim_end_matches(".bak");
-                let leftover = n.ends_with(".tmp") || n.ends_with(".bak");
-                if leftover && (stem == SUITE_FILE || is_vault_file(stem)) && e.file_type().is_ok_and(|t| t.is_file()) {
-                    let _ = std::fs::remove_file(e.path());
-                }
-            }
-        }
-        Ok(())
+    ///
+    /// H5: only with the proof of that suite, also while it is locked: both factors (`proof`:
+    /// its master password plus a key file or the PIN of a security key touched through
+    /// `transport`), checked against its files without opening it, or its recovery code
+    /// (`delete_working_copy_with_code`). A working copy without one readable container (nothing
+    /// there that could be opened) needs none.
+    pub fn delete_working_copy(
+        &self,
+        proof: FactorProof,
+        transport: Option<Arc<dyn HidTransport>>,
+        listener: Option<Arc<dyn FidoListener>>,
+    ) -> Result<()> {
+        self.prove_existing(ExistingProof::Factors(&proof, transport.as_ref(), listener.as_ref()))?;
+        self.delete_proven()
+    }
+
+    /// [`Self::delete_working_copy`] with the recovery code of the suite.
+    pub fn delete_working_copy_with_code(&self, code: String) -> Result<()> {
+        let code = Zeroizing::new(code);
+        self.prove_existing(ExistingProof::Code(&code))?;
+        self.delete_proven()
     }
 
     /// Whether the last `archive_accept` removed this device's data of the old state (quick
@@ -1477,6 +1570,31 @@ impl GhulSuite {
         Ok(ArchiveBuilt { state, change, size, sha256 })
     }
 
+    /// H12: about how large the suite file `archive_build` writes now will be, in bytes (never
+    /// less than it will be: every container padded as it is sealed, plus room for its header,
+    /// and every content file). The old file stays at its place until the new one is complete,
+    /// so the place needs this much free next to it; the app checks that before writing.
+    pub fn archive_estimated_size(&self) -> Result<u64> {
+        self.with_open(|o| {
+            let sealed = |c: &UnlockedContainer| -> Result<u64> {
+                Ok(crate::vault::payload::padded_len(c.payload.to_cbor()?.len()) as u64 + CONTAINER_EXTRA)
+            };
+            let mut entries: Vec<(String, u64)> =
+                vec![(HEADER_FILE.to_owned(), 2 * CONTAINER_EXTRA), (SUITE_FILE.to_owned(), sealed(&o.suite)?)];
+            for v in &o.vaults {
+                let Some(c) = &v.container else { continue };
+                entries.push((v.reference.file.clone(), sealed(c)?));
+                if v.reference.kind == "docs" {
+                    let id = &v.reference.id;
+                    for f in content_files(&self.docs_dir(id)?, id, &c.payload.entries)? {
+                        entries.push((f.name, f.len));
+                    }
+                }
+            }
+            Ok(zip_len(entries.iter().map(|(n, l)| (n.as_str(), *l))))
+        })
+    }
+
     /// The built file was written: this device has this state now. Nothing is unsaved unless
     /// the working copy changed after it was built (`change` from [`ArchiveBuilt`]).
     /// Also after the suite was locked while the file was written (the file is whole then, and
@@ -1505,6 +1623,209 @@ impl GhulSuite {
         Ok(())
     }
 }
+
+impl GhulSuite {
+    /// Deletes the working copy (see `delete_working_copy`), its proof given.
+    /// An error after the deletion began is [`GhulError::DeleteIncomplete`]: part of the suite
+    /// (at least this device's data of it) is gone; deleting again removes the rest. Any other
+    /// error (the proof) means nothing was deleted.
+    fn delete_proven(&self) -> Result<()> {
+        self.delete_now().map_err(|e| GhulError::DeleteIncomplete { msg: e.to_string() })
+    }
+
+    fn delete_now(&self) -> Result<()> {
+        let suite_id = self.working_suite_id();
+        // No replace runs meanwhile; one that could not be finished goes with the suite (round
+        // 6, M1): its journal would put the deleted suite back over a new one.
+        let _one = self.replace_lock.lock().unwrap_or_else(|e| e.into_inner());
+        self.end_journal();
+        self.lock();
+        self.finish_lock();
+        *self.built.lock().unwrap_or_else(|e| e.into_inner()) = None;
+        super::quick::delete_all(&self.local_dir);
+        for e in std::fs::read_dir(&self.local_dir).into_iter().flatten().flatten() {
+            let n = e.file_name().to_string_lossy().into_owned();
+            if n.starts_with("quick-") && n.ends_with(".stamp") {
+                let _ = std::fs::remove_file(e.path());
+            }
+        }
+        if let Some(id) = suite_id {
+            let _one = self.seen_guard();
+            let mut all = self.seen_all();
+            if all.remove(&crate::kdf::hex(&id)).is_some() {
+                self.write_seen(&all);
+            }
+        }
+        self.clear_unsaved();
+        if let Ok(root) = self.content_root() {
+            remove_all_contents(&root)?;
+        }
+        #[cfg(test)]
+        if DELETE_FAILS.with(std::cell::Cell::get) {
+            return Err(GhulError::Storage { msg: String::from("in use (test)") });
+        }
+        let names = self.storage.list()?;
+        for n in names.iter().filter(|n| *n != SUITE_FILE && (is_vault_file(n) || *n == HEADER_FILE)) {
+            self.storage.delete(n.clone())?;
+        }
+        self.storage.delete(SUITE_FILE.to_owned())?;
+        // Temporary files of an earlier write that did not end.
+        if let Ok(root) = self.content_root() {
+            for e in std::fs::read_dir(&root).into_iter().flatten().flatten() {
+                let n = e.file_name().to_string_lossy().into_owned();
+                let stem = n.trim_start_matches('.').trim_end_matches(".tmp").trim_end_matches(".bak");
+                let leftover = n.ends_with(".tmp") || n.ends_with(".bak");
+                if leftover && (stem == SUITE_FILE || is_vault_file(stem)) && e.file_type().is_ok_and(|t| t.is_file()) {
+                    let _ = std::fs::remove_file(e.path());
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// H5: the proof of the suite on this device, checked against its files (the suite file, or
+    /// any vault file) without opening it. Without one readable container there is nothing a
+    /// proof could be checked against, and nothing that could be opened: no proof is needed.
+    fn prove_existing(&self, proof: ExistingProof<'_>) -> Result<()> {
+        let locked = match self.anchor_with(true) {
+            Ok(l) => l,
+            Err(GhulError::NoVault) => return Ok(()),
+            Err(e) => return Err(e),
+        };
+        match proof {
+            ExistingProof::Factors(p, transport, listener) => {
+                let password = Zeroizing::new(p.password.clone());
+                let pin = p.pin.clone().map(Zeroizing::new);
+                let keyfile = parse_keyfile(p.keyfile.clone())?;
+                let s =
+                    second_factor(&locked, transport, listener, pin.as_deref().map(|p| p.as_str()), keyfile.as_ref())?;
+                let pk = PasswordKey::derive(&password, &locked.header().kdf)?;
+                locked.unlock(&pk, &s)?;
+            }
+            ExistingProof::Code(code) => {
+                let code = RecoveryCode::parse(code)?;
+                locked.recover(&code)?;
+            }
+        }
+        Ok(())
+    }
+
+    /// Documents are being added or content files copied right now (M6).
+    fn docs_busy(&self) -> bool {
+        self.content_copies_running() || self.docs_adds.load(std::sync::atomic::Ordering::SeqCst) > 0
+    }
+
+    /// See `archive_accept`; `existing`: the proof of the suite on this device, for a file of
+    /// another suite.
+    fn accept_pending(&self, existing: Option<ExistingProof<'_>>) -> Result<()> {
+        // A lock from now on wins (H10).
+        let gen = self.lock_gen_now();
+        self.wiped.store(false, std::sync::atomic::Ordering::SeqCst);
+        if self.docs_busy() {
+            return Err(GhulError::InvalidInput { msg: DOCS_BUSY.into() });
+        }
+        self.finish_earlier_replace()?;
+        let p = self.pending.lock().unwrap_or_else(|e| e.into_inner()).take().ok_or(GhulError::NotFound)?;
+        // Refused before anything changes: the checked file stays for another try.
+        let keep = |p: Pending, e: GhulError| -> Result<()> {
+            let mut slot = self.pending.lock().unwrap_or_else(|e| e.into_inner());
+            if self.lock_gen_now() == gen && slot.is_none() {
+                *slot = Some(p);
+            }
+            Err(e)
+        };
+        // Checked again right before replacing: another file may have been opened meanwhile.
+        let relation = self.relation(&p.header, &p.suite_id)?;
+        // What the user was told about unsaved changes is still what would be lost (M6).
+        // The checked file is dropped: the app opens it again and asks anew (round 5).
+        if relation != ArchiveRelation::NoSuite && self.content_change() != p.change {
+            drop(p);
+            return Err(GhulError::InvalidInput { msg: CHANGED_SINCE_CHECK.into() });
+        }
+        if relation == ArchiveRelation::OtherSuite {
+            let Some(proof) = existing else {
+                return keep(p, GhulError::InvalidInput { msg: OTHER_SUITE_NEEDS_PROOF.into() });
+            };
+            if let Err(e) = self.prove_existing(proof) {
+                return keep(p, e);
+            }
+        }
+        // The checked documents are all still there (nothing is locked or removed otherwise).
+        if let Some(Err(e)) = p.staged.as_ref().map(Staging::verify) {
+            return keep(p, e);
+        }
+        self.lock_now();
+        self.finish_lock();
+        // Quick unlock holds the password key and the factor secret of the working copy. They stay
+        // the same for a newer state of the same suite with the same protection: the same KDF
+        // (salt) and the same slots, compared in the headers themselves (two devices can each
+        // reach the same epoch with different changes). Anything else, or the recovery code:
+        // they go.
+        let same_header = || -> bool {
+            let Ok(old) = self.anchor() else { return false };
+            let Some((_, data)) = p.files.iter().find(|(n, _)| n == SUITE_FILE) else { return false };
+            let Ok(new) = LockedContainer::parse(data) else { return false };
+            protection_print(old.header()) == protection_print(new.header())
+        };
+        let same_protection = p.recovery.is_none()
+            && self.working_suite_id() == Some(p.suite_id)
+            && self.seen_all().get(&crate::kdf::hex(&p.suite_id)).is_some_and(|s| s.epoch == p.header.epoch)
+            && same_header();
+        if !same_protection {
+            self.wipe_device_data();
+            self.wiped.store(true, std::sync::atomic::Ordering::SeqCst);
+        }
+        *self.built.lock().unwrap_or_else(|e| e.into_inner()) = None;
+        self.replace_working_copy(&p.files, p.staged.as_ref())?;
+        let mut open = match (&p.recovery, p.keys) {
+            (Some((code, new_password)), _) => self.open_with_code(code.to_string(), new_password.to_string())?,
+            (None, Some((pk, s))) => {
+                let data = &p.files.iter().find(|(n, _)| n == SUITE_FILE).ok_or(GhulError::NoVault)?.1;
+                let suite = LockedContainer::parse(data)?.unlock(&pk, &s)?;
+                self.open_folder(pk, suite, true)?
+            }
+            _ => return Err(GhulError::NotFound),
+        };
+        let accepted = StateRef {
+            state: p.header.state.clone(),
+            counter: p.header.counter,
+            previous: String::new(),
+            ancestors: p.header.ancestors.clone(),
+            complete: p.header.complete,
+            file: crate::kdf::hex(&p.file_id),
+        };
+        // Noted on the open suite before it is kept: also if a lock came meanwhile, the working
+        // copy knows the state it is.
+        put_setting(&mut open.suite, STATE_KEY, &accepted)?;
+        let epoch = open.epoch();
+        self.save_container(&mut open.suite, SUITE_FILE)?;
+        // Nothing of the working copy before stays next to it (H7; never fails the accept).
+        self.purge_old_copies();
+        self.note_archive_seen(&p.suite_id, &accepted, epoch.max(p.header.epoch), p.header.time);
+        // After the recovery code everything was written anew: that is a change to save.
+        if p.recovery.is_none() {
+            self.clear_unsaved();
+        }
+        self.set_open(open, gen)
+    }
+}
+
+/// The proof of the suite on this device before it is deleted or replaced (H5).
+pub(super) enum ExistingProof<'a> {
+    /// Both factors: password plus key file or security key (PIN, touched through the transport).
+    Factors(&'a FactorProof, Option<&'a Arc<dyn HidTransport>>, Option<&'a Arc<dyn FidoListener>>),
+    /// The recovery code.
+    Code(&'a str),
+}
+
+/// `archive_accept` while documents are added or content files copied (translated by the app).
+pub const DOCS_BUSY: &str = "documents are being added or copied, try again when that is done";
+/// `archive_accept` after the working copy changed since the file was checked (M6). The checked
+/// file is forgotten: open it again (the app then asks about unsaved changes anew).
+pub const CHANGED_SINCE_CHECK: &str = "the working copy changed since the file was checked";
+/// `archive_accept` for a file of another suite: `archive_accept_replacing` with the proof of the
+/// suite on this device is needed (H5).
+pub const OTHER_SUITE_NEEDS_PROOF: &str = "replacing the suite on this device needs its proof";
 
 /// The content folders of the working copy moved aside while a suite file replaces it: put back
 /// if replacing fails, removed with the staging folder when it worked.
@@ -1643,7 +1964,79 @@ mod pending_tests {
             keys: None,
             staged: None,
             file_id: [0; 16],
+            change: 0,
         }
+    }
+
+    fn temp_suite(name: &str) -> (std::path::PathBuf, Arc<GhulSuite>) {
+        let root =
+            std::env::temp_dir().join(format!("ghul-{name}-{}", crate::kdf::hex(&super::super::suite::new_id())));
+        let s = GhulSuite::new(
+            super::super::storage::local_storage(root.join("vault").to_string_lossy().into_owned()),
+            root.join("local").to_string_lossy().into_owned(),
+        );
+        (root, s)
+    }
+
+    /// H13: a lineage that had to be cut off (`complete` false, more than MAX_ANCESTORS saves):
+    /// the counters decide, a file carried on from this device's state by one save is newer.
+    #[test]
+    fn a_cut_off_lineage_goes_by_the_counter() {
+        let (root, s) = temp_suite("cut-lineage");
+        let id = [7u8; 16];
+        let seen = Seen {
+            state: "mine".into(),
+            counter: 10,
+            at: 10,
+            ancestors: vec!["older".into()],
+            complete: false,
+            ..Default::default()
+        };
+        let mut all = BTreeMap::new();
+        all.insert(crate::kdf::hex(&id), seen);
+        s.try_write_seen(&all).unwrap();
+        let header = |counter: u64, previous: &str, complete: bool| ArchiveHeader {
+            state: format!("s{counter}{previous}"),
+            previous: previous.into(),
+            counter,
+            complete,
+            ancestors: vec!["x".into()],
+            ..Default::default()
+        };
+        let rel = |h: ArchiveHeader| s.relation(&h, &id).unwrap();
+        assert_eq!(rel(header(9, "", false)), ArchiveRelation::Older);
+        assert_eq!(rel(header(10, "", false)), ArchiveRelation::Branch, "the same counter, another state");
+        assert_eq!(rel(header(11, "mine", false)), ArchiveRelation::Newer, "carried on from this state");
+        assert_eq!(rel(header(11, "other", false)), ArchiveRelation::Branch, "one more, from another state");
+        assert_eq!(rel(header(12, "other", false)), ArchiveRelation::Newer);
+        // A complete lineage without this device's state: a branch, or older below the counter
+        // (this device's own lineage is cut off, so it may simply not know it).
+        assert_eq!(rel(header(12, "", true)), ArchiveRelation::Branch);
+        assert_eq!(rel(header(9, "", true)), ArchiveRelation::Older);
+        // By the lineage: the ancestors of this device's state are older.
+        let mut old = header(3, "", false);
+        old.state = "older".into();
+        assert_eq!(rel(old), ArchiveRelation::Older);
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    /// M5: notes of the device written from many threads at once: none is lost.
+    #[test]
+    fn notes_of_the_device_are_written_one_at_a_time() {
+        let (root, s) = temp_suite("seen-lock");
+        let threads: Vec<_> = (0..8u8)
+            .map(|t| {
+                let s = s.clone();
+                std::thread::spawn(move || {
+                    for i in 0..10u8 {
+                        s.note_epoch(&[t * 16 + i; 16], 1).unwrap();
+                    }
+                })
+            })
+            .collect();
+        threads.into_iter().for_each(|t| t.join().unwrap());
+        assert_eq!(s.seen_all().len(), 80);
+        let _ = std::fs::remove_dir_all(root);
     }
 
     /// A full GhulDocs (content files of the largest stored size, as many documents as allowed)

@@ -52,7 +52,7 @@ actual fun rememberOpenFile(onPicked: (PickedFile) -> Unit): () -> Unit {
 }
 
 @Composable
-actual fun rememberSaveFile(onSaved: (Boolean) -> Unit): (String, ByteArray) -> Unit {
+actual fun rememberSaveFile(onSaved: (de.danerd.ghulsuite.ui.SaveFileResult) -> Unit): (String, ByteArray) -> Unit {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val pending = remember { arrayOfNulls<ByteArray>(1) }
@@ -62,17 +62,36 @@ actual fun rememberSaveFile(onSaved: (Boolean) -> Unit): (String, ByteArray) -> 
         ExternalActivity.finished()
         val data = pending[0]
         pending[0] = null
-        if (uri == null || data == null) {
-            onSaved(false)
+        if (uri == null) {
+            onSaved(SaveFileResult.CANCELLED)
+            return@rememberLauncherForActivityResult
+        }
+        val resolver = context.applicationContext.contentResolver
+        if (data == null) {
+            // The app was recreated while the dialog was open: the content is gone, the document
+            // just made stays no empty file, and it is no "cancelled" (r7 M-2).
+            runCatching { android.provider.DocumentsContract.deleteDocument(resolver, uri) }
+            onSaved(SaveFileResult.FAILED)
             return@rememberLauncherForActivityResult
         }
         scope.launch {
-            val ok = withContext(Dispatchers.IO) {
-                runCatching {
-                    context.contentResolver.openOutputStream(uri, "wt")?.use { it.write(data) } != null
-                }.getOrDefault(false)
+            // M8: a failed write says so (a full storage with its own text).
+            val result = withContext(Dispatchers.IO) {
+                try {
+                    if (context.contentResolver.openOutputStream(uri, "wt")?.use { it.write(data) } != null) {
+                        de.danerd.ghulsuite.ui.SaveFileResult.SAVED
+                    } else {
+                        de.danerd.ghulsuite.ui.SaveFileResult.FAILED
+                    }
+                } catch (e: Exception) {
+                    if (de.danerd.ghulsuite.isNoSpace(e)) de.danerd.ghulsuite.ui.SaveFileResult.NO_SPACE else de.danerd.ghulsuite.ui.SaveFileResult.FAILED
+                }.also { r ->
+                    // r7 M-1: the document made by the dialog is not left half written or empty
+                    // (as with rememberCreateStream).
+                    if (r != SaveFileResult.SAVED) runCatching { android.provider.DocumentsContract.deleteDocument(resolver, uri) }
+                }
             }
-            onSaved(ok)
+            onSaved(result)
         }
     }
     return remember(launcher) {
@@ -249,7 +268,7 @@ actual fun rememberOpenStreams(onPicked: (List<ByteSource>) -> Unit): () -> Unit
 }
 
 @Composable
-actual fun rememberCreateStream(onCreated: (ByteSink?) -> Unit): (String, String) -> Unit {
+actual fun rememberCreateStream(onFailed: () -> Unit, onCreated: (ByteSink?) -> Unit): (String, String) -> Unit {
     val context = LocalContext.current
     val mime = remember { arrayOf("application/octet-stream") }
     val launcher = rememberLauncherForActivityResult(
@@ -263,7 +282,11 @@ actual fun rememberCreateStream(onCreated: (ByteSink?) -> Unit): (String, String
         val resolver = context.applicationContext.contentResolver
         val out = uri?.let { runCatching { resolver.openOutputStream(it, "wt") }.getOrNull() }
         // Created but cannot be written: no empty file is left behind.
-        if (uri != null && out == null) runCatching { android.provider.DocumentsContract.deleteDocument(resolver, uri) }
+        if (uri != null && out == null) {
+            runCatching { android.provider.DocumentsContract.deleteDocument(resolver, uri) }
+            // r7 N-5: chosen but not writable is no "cancelled".
+            onFailed()
+        }
         onCreated(
             out?.let {
                 object : ByteSink {

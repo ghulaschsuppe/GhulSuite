@@ -19,32 +19,114 @@ class DesktopUpdater : CoreUpdater(if (DesktopPaths.portable) "-portable.zip" el
         get() = hasKey && exe != null && System.getProperty("os.name").lowercase().contains("win")
     override val installs: Boolean get() = !DesktopPaths.portable
 
-    override suspend fun install(update: UpdateUi): UpdateStep {
+    override suspend fun install(update: UpdateUi, mayFinish: () -> Boolean): UpdateStep {
         if (DesktopPaths.portable) {
             runCatching { java.awt.Desktop.getDesktop().browse(URI(update.page)) }
             return UpdateStep.STARTED
         }
-        val dir = File(System.getProperty("java.io.tmpdir"), "GhulSuite-Update")
+        // M24: a new folder with a random name for every run (another program cannot prepare
+        // a file there in advance); folders of earlier runs go.
+        val temp = File(System.getProperty("java.io.tmpdir"))
+        temp.listFiles { f -> f.isDirectory && (f.name == "GhulSuite-Update" || f.name.startsWith("GhulSuite-Update-")) }
+            ?.forEach { it.deleteRecursively() }
+        val dir = java.nio.file.Files.createTempDirectory(temp.toPath(), "GhulSuite-Update-").toFile()
         val msi = download(update, dir)
-        val script = File(dir, "update.cmd")
-        // cmd reads a batch file in the console code page: UTF-8 is switched on first (paths with
-        // umlauts, e.g. C:\Users\Jürgen), and "%" in a path is doubled (else it is expanded). The
-        // installer starts only once this process has ended (no file of the app in use).
-        fun q(path: String) = "\"" + path.replace("%", "%%") + "\""
-        val pid = ProcessHandle.current().pid()
-        script.writeText(
-            "@echo off\r\n" +
-                "chcp 65001 >nul\r\n" +
-                ":wait\r\n" +
-                "tasklist /FI \"PID eq $pid\" 2>nul | find \"$pid\" >nul && (timeout /t 1 /nobreak >nul & goto wait)\r\n" +
-                "msiexec /i ${q(msi.absolutePath)} /passive /norestart\r\n" +
-                "start \"\" ${q(exe!!.absolutePath)}\r\n" +
-                "del ${q(msi.absolutePath)}\r\n",
-            Charsets.UTF_8,
-        )
-        ProcessBuilder("cmd", "/c", script.absolutePath).directory(dir).start()
+        // M7: checked again right before the app ends (a save or an edit started meanwhile).
+        if (!mayFinish()) {
+            dir.deleteRecursively()
+            return UpdateStep.WAIT
+        }
+        resultFile.delete()
+        // M24: no script file that could be changed while it waits: the commands go to
+        // PowerShell as one argument, and the installer is held open (others may read, not
+        // write, rename or delete it) from the hash check until msiexec has ended. Without
+        // PowerShell this throws here and the app stays open with the message.
+        val script = updateScript(ProcessHandle.current().pid(), msi.absoluteFile, expectedSha256(update), exe!!.absoluteFile, resultFile.absoluteFile)
+        try {
+            ProcessBuilder("powershell", "-NoProfile", "-NonInteractive", "-EncodedCommand", encodedCommand(script)).directory(dir).start()
+        } catch (e: java.io.IOException) {
+            dir.deleteRecursively()
+            throw de.danerd.ghulsuite.model.VaultException(de.danerd.ghulsuite.model.VaultErrorKind.INVALID_INPUT, NO_POWERSHELL)
+        }
+        // The script overwrites this with its result. Still there at the next start: it never ran
+        // (a virus scanner or AppLocker stopped it), and the app says so.
+        runCatching { resultFile.writeText(PENDING + " " + System.currentTimeMillis()) }
         // The installer replaces the files of the running app: it ends now (the keys go with the
-        // process; the app made sure before that nothing is being saved or edited).
+        // process; the app made sure right before that nothing is being saved or edited).
         exitProcess(0)
     }
+
+    /** Where the script leaves the exit code of msiexec for the next start (M24). */
+    private val resultFile: File get() = File(DesktopPaths.dataDir, "update-result.txt")
+
+    override fun takeFailedInstall(): String? {
+        val f = resultFile
+        if (!f.exists()) return null
+        val text = runCatching { f.readText() }.getOrDefault("")
+        // N6: started by hand while the script still waits for msiexec: no verdict yet, the
+        // file stays for the script (and for the next start).
+        val code = installResult(text, System.currentTimeMillis()) ?: return null
+        f.delete()
+        return code.takeIf { failedInstall(it) }
+    }
 }
+
+/**
+ * The result the script left ([text]), as [failedInstall] reads it; null while it may still run.
+ * "pending <time>" (written before the app ended) counts as "it never ran" only once
+ * [PENDING_GRACE_MS] have passed since (an installation takes a few minutes at most); a plain
+ * "pending" (an older version) right away.
+ */
+internal fun installResult(text: String, now: Long): String? {
+    val parts = text.trim().split(' ')
+    if (parts.first() != PENDING) return text.trim()
+    val at = parts.getOrNull(1)?.toLongOrNull() ?: return PENDING
+    // A time in the future (the clock was set back): no reason to wait for ever.
+    return if (now - at in 0 until PENDING_GRACE_MS) null else PENDING
+}
+
+/** How long after the app ended for an update "pending" still means: the script may be running. */
+internal const val PENDING_GRACE_MS = 10 * 60 * 1000L
+
+/** Exit codes of msiexec that mean success: 0, and "done, restart needed" (1641, 3010). */
+internal fun failedInstall(code: String): Boolean = code !in setOf("0", "1641", "3010")
+
+/** PowerShell's -EncodedCommand: the script in UTF-16LE, Base64. */
+internal fun encodedCommand(script: String): String =
+    java.util.Base64.getEncoder().encodeToString(script.toByteArray(Charsets.UTF_16LE))
+
+/**
+ * The PowerShell commands that install the update once this process ([pid]) has ended (M24). The
+ * installer [msi] is opened with read sharing only and stays open until msiexec has ended, so
+ * nothing can change, rename or delete it between the check of its SHA-256 against [sha256] and
+ * the installation. A mismatch installs nothing. [result] gets the exit code of msiexec, "hash"
+ * (wrong checksum) or "error" (the check itself failed); then GhulSuite ([exe]) starts again.
+ */
+internal fun updateScript(pid: Long, msi: File, sha256: String, exe: File, result: File): String {
+    // Inside single quotes only ' itself needs doubling.
+    fun q(text: String) = "'" + text.replace("'", "''") + "'"
+    val hash = sha256.filter { it.isLetterOrDigit() }.uppercase()
+    return listOf(
+        "Wait-Process -Id $pid -ErrorAction SilentlyContinue",
+        "\$code = 'error'",
+        "try {",
+        "  \$f = [IO.File]::Open(${q(msi.path)}, 'Open', 'Read', 'Read')",
+        "  try {",
+        "    \$h = -join ([Security.Cryptography.SHA256]::Create().ComputeHash(\$f) | ForEach-Object { \$_.ToString('X2') })",
+        "    if (\$h -ne '$hash') { \$code = 'hash' } else {",
+        "      \$p = Start-Process -FilePath 'msiexec.exe' -ArgumentList @('/i', ${q("\"" + msi.path + "\"")}, '/passive', '/norestart') -Wait -PassThru",
+        "      \$code = [string]\$p.ExitCode",
+        "    }",
+        "  } finally { \$f.Close() }",
+        "} catch { \$code = 'error' }",
+        "Set-Content -LiteralPath ${q(result.path)} -Value \$code -Encoding ASCII",
+        "Remove-Item -LiteralPath ${q(msi.path)} -ErrorAction SilentlyContinue",
+        "Start-Process -FilePath ${q(exe.path)}",
+    ).joinToString("\r\n")
+}
+
+/** Written before the app ends for an update; the script replaces it with its result. */
+internal const val PENDING = "pending"
+
+/** PowerShell could not be started (the update needs it; translated by the app). */
+internal const val NO_POWERSHELL = "the update needs PowerShell"

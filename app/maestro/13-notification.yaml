@@ -28,6 +28,18 @@ name: Unlocked notification
     element: "Lock by shaking"
     direction: DOWN
 - tapOn: "Lock by shaking"
+# M14: switching a protection off asks for the master password first.
+- extendedWaitUntil:
+    visible: "Weaken the protection\\?"
+    timeout: 10000
+- takeScreenshot: 13-weaken-ask
+- tapOn: { id: "gate-password" }
+- inputText: "Ghul-Test-Passwort-2026!"
+- hideKeyboard
+- tapOn: { id: "gate-confirm" }
+- extendedWaitUntil:
+    notVisible: "Weaken the protection\\?"
+    timeout: 15000
 # One pull down does not always open the shade on the emulator (right after the app came to the
 # front): pull again while it is not open.
 - retry:

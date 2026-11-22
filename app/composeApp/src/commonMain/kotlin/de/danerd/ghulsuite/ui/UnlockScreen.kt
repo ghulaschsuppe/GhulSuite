@@ -71,7 +71,7 @@ fun UnlockScreen(state: AppState) {
         error = describe(e)
         ready = backend.quickUnlockReady()
         val kind = (e as? VaultException)?.kind
-        if (!ready.any || kind == VaultErrorKind.QUICK_EXPIRED || kind == VaultErrorKind.BIOMETRIC_CHANGED) {
+        if (!ready.any || kind == VaultErrorKind.QUICK_EXPIRED || kind == VaultErrorKind.QUICK_OUTDATED || kind == VaultErrorKind.BIOMETRIC_CHANGED) {
             mode = UnlockMode.FULL
         }
     }
@@ -127,7 +127,7 @@ fun UnlockScreen(state: AppState) {
         when (mode) {
             UnlockMode.QUICK -> {
                 if (ready.pin) {
-                    SecretTextField(appPin, { appPin = it; error = null }, stringResource(Res.string.l_app_pin), numeric = true)
+                    SecretTextField(appPin, { appPin = it.filter(Char::isDigit).take(12); error = null }, stringResource(Res.string.l_app_pin), numeric = true)
                     Button(onClick = {
                         state.run(onError = { error = it; appPin = "" }, block = {
                             try {
@@ -140,7 +140,7 @@ fun UnlockScreen(state: AppState) {
                                 false
                             }
                         }) { ok -> if (ok) clear() }
-                    }, enabled = !state.busy && appPin.length >= 4, modifier = Modifier.fillMaxWidth()) {
+                    }, enabled = !state.busy && appPin.length >= MIN_APP_PIN, modifier = Modifier.fillMaxWidth()) {
                         Icon(Icons.Outlined.Lock, null, Modifier.size(18.dp))
                         Text(stringResource(Res.string.a_unlock_pin))
                     }
@@ -258,3 +258,6 @@ fun UnlockScreen(state: AppState) {
         }
     }
 }
+
+/** M19, M42: an app PIN has 6 to 12 digits (the rule of the core), wherever it is set or typed. */
+val MIN_APP_PIN: Int get() = PasswordPolicy.MIN_APP_PIN

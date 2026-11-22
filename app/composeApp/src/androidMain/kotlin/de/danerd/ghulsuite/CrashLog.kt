@@ -14,13 +14,11 @@ import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
 import java.io.File
-import java.io.PrintWriter
-import java.io.StringWriter
 
 /**
  * Remembers a crash and shows it on the next start, so it can be copied into a bug report.
- * The report holds only the error and device information, no vault content (secrets never
- * appear in exception messages of the app).
+ * The report holds only the classes and stack frames of the error and device information, no
+ * messages and no vault content.
  */
 object CrashLog {
     private fun file(context: Context) = File(context.filesDir, "last-crash.txt")
@@ -35,7 +33,8 @@ object CrashLog {
     }
 
     fun write(context: Context, error: Throwable, where: String = "start") {
-        val trace = StringWriter().also { error.printStackTrace(PrintWriter(it)) }.toString()
+        // Classes and frames only, no messages: the report shows before the suite is unlocked.
+        val trace = crashTrace(error)
         val version = runCatching { context.packageManager.getPackageInfo(context.packageName, 0).versionName }.getOrNull()
         val text = buildString {
             appendLine("GhulSuite $version · Android ${Build.VERSION.RELEASE} (API ${Build.VERSION.SDK_INT}) · ${Build.MANUFACTURER} ${Build.MODEL}")

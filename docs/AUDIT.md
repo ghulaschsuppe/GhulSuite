@@ -1,6 +1,6 @@
 # GhulSuite: Sicherheitsbericht
 
-**Stand:** 20.11.2026, Formatversion 3 mit Schreibsiegel, **eine reine Offline-App** (Umbau nach
+**Stand:** 22.11.2026 (nach der Großprüfung vom 21. und 22.11.2026, Abschnitt 3 und 4.6), Formatversion 3 mit Schreibsiegel, **eine reine Offline-App** (Umbau nach
 [`UMBAU-OHNE-SYNC.md`](UMBAU-OHNE-SYNC.md) und [`UMBAU-GHULDOCS.md`](UMBAU-GHULDOCS.md)): Die Suite wandert als eine
 Datei (`.ghlzip`, bis 3,75 GiB), Dokumente liegen verschlüsselt in GhulDocs (seit 20.11.2026 bis zu 3 Tresore), es gibt keine Server und keine Konten.
 Nach draußen gehen nur die Update-Prüfung und die Leak-Prüfung von GhulPass, beide abschaltbar. Befunde, die nur
@@ -8,9 +8,9 @@ entfernte Funktionen betrafen (Synchronisation, FTP/FTPS, Sicherung/Wiederherste
 Autofill, und seit dem Umbau zu GhulDocs: GhulMail, GhulDrive, Server und SFTP, PHP-Modul, Freigabelinks,
 Schlüsselwechsel, Mail-Archiv, Hochladen von Fehlerberichten), bleiben in der Geschichte stehen und sind als
 **obsolet** markiert.
-**Art:** Internes Audit des eigenen Codes plus eine dauerhafte Testsuite mit Angriffen. Es gibt **keinen externen
-Audit durch Dritte**: GhulSuite ist ein Soloprojekt. Wer sich mit Sicherheit auskennt, ist eingeladen mitzulesen,
-anzugreifen und zu melden ([`SECURITY.md`](../SECURITY.md)).
+**Art:** Internes Audit des eigenen Codes (Durchsichten durch KI-Agenten) plus eine dauerhafte Testsuite mit
+Angriffen. GhulSuite ist ein Hobbyprojekt ohne Prüfung durch Dritte. Wer sich mit Sicherheit auskennt, ist eingeladen
+mitzulesen, anzugreifen und zu melden ([`SECURITY.md`](../SECURITY.md)).
 
 Dieser Bericht fasst alle bisherigen Runden zusammen und sagt ehrlich, was offen ist. Die Einzelheiten jedes Fundes
 (Test, der ihn zeigt, Commit) stehen im [Testprotokoll](TESTPROTOKOLL.md), wie getestet wird im
@@ -37,6 +37,7 @@ Alle Prüfläufe, auch die künftigen, und die Geschichte des Konzepts stehen ch
 | 17. bis 19.11.2026 | **Umbau zu GhulDocs, offline** (Pakete G1 bis G8): GhulMail, GhulDrive, alle Server (SFTP, PHP-Modul), Freigabelinks, Schlüsselwechsel, das Hochladen von Fehlerberichten (`report.php`) und das Lesen älterer Formate entfernt; nach einer Schutzänderung öffnet die App keine Suite-Datei mit älterem Schutz mehr. Neu: Suite-Datei als Datenstrom bis 1,25 GiB mit Fortschritt; GhulDocs (Inhaltsverzeichnis im Container, Inhaltsdateien in Abschnitten zu 4 MiB mit eigenem Schlüssel je Datei, aufgefüllt auf 64 KiB, Grenzen 1 GB und 20 000 Dokumente); Ansehen ohne Klartext auf dem Datenträger; Scannen auf Android nur im Arbeitsspeicher | Die Befunde zu Mail, Drive, Servern, Freigaben und Schlüsselwechsel sind **obsolet** (rund 70 der 146 offenen Befunde der letzten Durchsichten, darunter H2, H5 und H7). Neue Tests: Angriffe auf Inhaltsdateien (vertauschte, abgeschnittene, fremde Abschnitte, falsche Füllung, falsche Länge), auf das Inhaltsverzeichnis und auf die Suite-Datei mit Dokumenten, volles GhulDocs, Abbruch beim Hinzufügen, Öffnen und Speichern; Oberfläche am Desktop mit echtem Kern, Scannen mit gezeichneten Fotos. Die unabhängige Durchsicht folgt in G9 |
 | 20.11.2026 | **Mehrere GhulDocs-Tresore, ganzen Tresor weitergeben:** eine Suite hat wieder mehrere GhulDocs-Tresore, höchstens 3 (hart begrenzt, eine Suite-Datei mit mehr wird nicht geöffnet), je bis 1 GB, zusammen also bis 3 GB, und 20 000 Dokumente; die Suite-Datei bis 3,75 GiB (unter 4 GiB: kein ZIP64, FAT32). Ein hinzugefügtes GhulDocs-Paket wird ein eigener Tresor (geprüft und zwischengelegt, bevor etwas geändert wird); das Einsortieren in den einen Tresor und das Ersetzen (`docs_replace_vault`) sind entfernt. „Als Tresor weitergeben“ geht aus dem Menü jedes Tresors für den ganzen Tresor, auch für GhulCal | Weniger Code (kein Einsortieren mit neuen Kennungen, kein Ersetzen mit Sichern). Neue bzw. angepasste Tests im Kern und am Desktop, siehe [Testprotokoll](TESTPROTOKOLL.md), Abschnitt 11 |
 | 20.11.2026 | **Unabhängige Durchsicht des Umbaus auf mehrere GhulDocs-Tresore** | 3 Befunde im Kern (1 hoch, 1 mittel, 1 niedrig) und 6 in der App, alle behoben; siehe Abschnitt 3 und [Testprotokoll](TESTPROTOKOLL.md), Abschnitt 11 |
+| 21. und 22.11.2026 | **Großprüfung:** 25 KI-Agenten in vier Wellen (ganzheitlich, Angreifer, Nutzerwege, Methoden), Behebung durch zwei Entwickler-Agenten mit gegenseitiger Durchsicht, Runde 5 mit fünf Prüfern, Schlussprüfung ([Prüf-Chronik](PRUEFCHRONIK.md), Abschnitt 2.3) | 13 hoch, 44 mittel, dazu kleine Punkte; behoben bis auf GP-H11 (zum Teil), GP-M8, GP-M21, GP-M44 und die Restrisiken in 4.6 ([Testprotokoll](TESTPROTOKOLL.md), Abschnitt 12) |
 
 **In Zahlen (Stand vor den Umbauten):** 149 Funde aus den Testrunden (F01 bis F149), alle behoben bzw. entschieden
 (F24 ist gewollt). Alle Punkte des Audits vom 13.11.2026 sind erledigt (B1 bis B18, L1, L3, L5, L7, L10, L13) oder
@@ -112,6 +113,7 @@ Nach Bereich zusammengefasst; die Nummern führen ins [Testprotokoll](TESTPROTOK
 | **Mehrere GhulDocs-Tresore** (20.11.2026) | Höchstens 3 GhulDocs-Tresore: ein vierter wird abgelehnt, wo immer er hinzukäme, eine Suite-Datei mit mehr wird nicht geöffnet; Grenzen je Tresor (1 GB) und für alle zusammen (3 GB, 20 000 Dokumente, 3,3 GB Inhaltsdateien) greifen, bevor etwas geschrieben wird, auch beim Hinzufügen eines Pakets; die größte Suite-Datei (3,75 GiB) mit vollen GhulDocs-Tresoren und 200 MiB übrigen Tresoren bleibt mit ihrem ZIP-Verzeichnis unter 4 GiB; ein Paket wird erst nach vollständiger Prüfung ein eigener Tresor, und ein Tresor, der sich nicht speichern lässt, bleibt nicht halb da; dasselbe Paket zweimal wird abgelehnt | `several_docs_vaults_each_on_their_own`, `the_limit_holds_with_the_trash`, `an_adopted_docs_vault_that_cannot_be_saved_is_not_half_added`, `a_full_suite_fits_into_the_largest_file` |
 | **Durchsicht Mehrere GhulDocs-Tresore** (20.11.2026, unabhängig) | **Hoch:** Ein manipuliertes Paket, dessen Kennung in den ersten 8 Byte mit einem vorhandenen Tresor übereinstimmt (der Dateiname enthält nur 16 Hex-Zeichen), konnte dessen Tresordatei überschreiben; jetzt lehnt das Hinzufügen in allen Bereichen jeden Tresor ab, dessen Dateiname schon vergeben ist, auch durch eine nicht lesbare Datei im Ordner. **Mittel:** Ein Paket mit derselben Kennung wie ein beschädigter, nicht lesbarer GhulDocs-Tresor löschte dessen Dokumentordner; jetzt „schon vorhanden“, nichts wird gelöscht. **Niedrig:** Eine Suite mit mehr Einträgen, als gelesen werden (21 000), wird nicht mehr geschrieben. Dazu App-Funde: Kopfzeile bei „Alle Tresore“, Belegung in den Optionen, „fast voll“ ohne Angabe, was voll ist, springender Kopf bei der Auswahl, „Vorher exportieren“ unverschlüsselt, leerer Tresor weitergeben | `adopting_never_overwrites_a_vault_with_the_same_file_name`, `adopting_never_removes_a_damaged_docs_vault`, `a_file_with_too_many_entries_is_not_written`. **Mittel:** Ein ganz weitergegebener GhulCal-Tresor behielt seine Kennungen (zurück in derselben Suite traf Löschen den falschen Kalender), jetzt neue Kennungen, `a_whole_vault_is_handed_on`; ein Docs-Tresor, der während des Speicherns entfernt und gleich wieder hinzugefügt wurde, verlor seine Dokumente, jetzt abgelehnt, bis der alte Ordner weg ist, `a_vault_added_again_while_saving_never_loses_its_documents` |
 | **Android** | Benachrichtigungen, die bei gesperrtem Gerät eintreffen, enthalten nur ihre Sperrbildschirm-Fassung (Android lässt Apps die Kanal-Einstellung nicht vorgeben, daher entscheidet die App beim Eintreffen); Mail-Zugang für Benachrichtigungen bevorzugt in StrongBox, wahlweise löscht ihn die Sofortsperre (**obsolet** mit GhulMail); `.ics` von fremden Apps nur nach Vorschau; interne Aktionen nur aus eigenen Benachrichtigungen; Auto-Sperre zählt die echte Zeit; Autofill fragt vor dem Verknüpfen; kein Tippen durch darübergelegte Fenster | B4 bis B9, L10, F43 |
+| **Großprüfung** (21. und 22.11.2026; Nummern GP-… im [Testprotokoll](TESTPROTOKOLL.md), Abschnitt 12) | **Behoben:** Signaturschlüssel nur noch in den Environments `signing` und `release`, sonst ein Wegwerf-Schlüssel, kein Release von Hand (GP-H1, GP-H2, 4.1); nach dem Notfallblatt reicht bis zum Sperren das neue Passwort für den Tausch der Faktoren (GP-H3); „Mit App öffnen“ lehnt Programme ab, Mark-of-the-Web (GP-H4); Löschen und Ersetzen der Suite nur mit Nachweis (GP-H5); Schnell-Entsperren nur mit beiden Faktoren, Gültigkeit fest in der Schnell-Datei Version 3, abgelaufen heißt abgelehnt statt gelöscht (GP-H6, GP-M30); alte `.bak`-Kopien nach Schutzänderungen entfernt (GP-H7); Tags, Ordner und unbekannte Felder bleiben beim Bearbeiten (GP-H8, GP-H9); Sperren während des Entsperrens gewinnt (GP-H10); freier Platz vorher geprüft, „voll“ am Fehlercode (GP-H12); Update-Prüfung als Ganzes getestet, je Schutzänderung „nur Passwort → abgelehnt“ (GP-H13); 2FA-Geheimnisse als QR und Abschwächen der Sperre nur nach dem Master-Passwort (GP-M13, GP-M14); Weitergabe als Tresor mit beiden Faktoren (GP-M15); Passwort- und PIN-Regeln im Kern (GP-M42); CSV ohne Apostroph, Tabellenschutz als Schalter (GP-M29); Grenzen für präparierte Pakete und ICS (GP-M25 bis GP-M27); Gradle-Wrapper und -Verteilung mit Prüfsumme (GP-M23); Website-Zugangsdaten im Environment `website` (GP-M22); Texte, die mehr versprachen als der Code (GP-M35 bis GP-M41) | GP-H1 bis GP-H13, GP-M1 bis GP-M43 (außer GP-M8, GP-M21) |
 | **Windows** | Entschlüsselte Kopien werden überschrieben und gelöscht, auch wenn ein Programm sie erst später freigibt; portabel bleiben sie im Datenordner; Arbeitsverzeichnis nicht mehr im DLL-Suchpfad | B10, L13 |
 | **Mail** (Runde 5; **obsolet**) | Herkunft von Kontaktschlüsseln gemerkt; Fingerabdruck vergleichen und bestätigen, Warnung bei Wechsel; Bilder nur von genau der geprüften Adresse (kein DNS-Rebinding) | B12, B16, L7 |
 | **PHP-Modul und Freigaben** (Runde 5; **obsolet**) | Gültig signierte Anfragen werden nie gesperrt, Doppel-Endungen abgelehnt, Dateien 0600; Server ohne PHP-Ausführung wird erkannt und die Datei sofort gelöscht; Zurückziehen meldet Fehler ehrlich | B14, B15, L5 |
@@ -119,6 +121,9 @@ Nach Bereich zusammengefasst; die Nummern führen ins [Testprotokoll](TESTPROTOK
 | **Abhängigkeiten** | `russh` (Speicher-Angriff durch bösartigen SSH-Server; **obsolet**, entfernt), `zip`, `crypto-bigint` über `p256` auf sichere Versionen | A1, A2, R1 |
 
 ## 4. Offen
+
+**Aus der Großprüfung (21. und 22.11.2026) offen:** GP-H11 zum Teil, GP-M44 und die Restrisiken in
+4.6; Einzelheiten im [Testprotokoll](TESTPROTOKOLL.md), Abschnitt 12.
 
 Aus den Testrunden und Audits bis 16.11.2026 ist **nichts mehr offen**. Von den 146 offenen Befunden der letzten
 Durchsichten entfallen mit Mail, Drive und Servern rund 70 (darunter H2, H5 und H7); die übrigen (vor allem Sperren und
@@ -131,7 +136,7 @@ Nichts davon gibt einem Angreifer ohne Passwort **und** zweiten Faktor Zugriff a
 
 | Nr. | Entscheidung | Begründung |
 |---|---|---|
-| L4, B17 | **Ein Signaturschlüssel für alles:** Entwicklerversionen aller eigenen Branches und spätere Veröffentlichungen werden mit demselben Schlüssel signiert, ein getrennter Release-Schlüssel ist nicht vorgesehen | Entwicklerversionen sollen sich über die installierte App aktualisieren lassen; mit einem anderen Schlüssel müsste man sie erst deinstallieren und verlöre die Daten auf dem Gerät. Ein zweiter Schlüssel schützte vor allem gegen einen übernommenen GitHub-Zugang, und mit dem ließe sich auch `main` ändern. Schutz: Der Schlüssel steht nur im eigenen Repository bereit (bei Pushes und bei Pull Requests aus diesem Repository, seit 16.11.2026, damit ein Push mit offenem Pull Request nicht doppelt läuft), nie bei Pull Requests aus Forks; pushen und solche Pull Requests anlegen kann nur, wer Schreibrecht hat, also der Inhaber. Am 21.11.2026 nach dem unabhängigen Gutachten erneut so entschieden (der Inhaber behält die Schlüssel; sein GitHub-Konto ist mit einem Hardware-Key gesichert, veröffentlicht wird nur nach grüner CI). Voraussetzungen: Zwei-Faktor-Anmeldung bei GitHub (Passkey oder Security Key), eine Offline-Sicherung der Keystore-Datei und ihres Passworts (ohne sie lässt sich keine installierte App mehr aktualisieren), Abhängigkeiten nur bewusst aktualisieren (Gradle-Prüfsummen, `Cargo.lock`) |
+| L4, B17 | **Ein Signaturschlüssel für Testversionen von `main` und `dev` und für Veröffentlichungen**, ein getrennter Release-Schlüssel ist nicht vorgesehen; die Schlüssel bleiben (Entscheidung des Inhabers vom 21.11.2026, nach dem Gutachten und erneut nach der Großprüfung) | Die Testversionen von `main` und `dev` sollen sich über die installierte App aktualisieren lassen; mit einem anderen Schlüssel müsste man sie erst deinstallieren und verlöre die Daten auf dem Gerät. Ein zweiter Schlüssel schützte vor allem gegen einen übernommenen GitHub-Zugang, und mit dem ließe sich auch `main` ändern. **Schutz seit der Großprüfung (GP-H1, GP-H2):** Der Schlüssel liegt nur noch in zwei GitHub-Environments: `signing` (APK-Bau in `android.yml` bei einem Push auf `main` oder `dev`, Deployment-Branches `main` und `dev`) und `release` (Jobs `android` und `publish` in `release.yml`, Deployment-Branch `main`). Jeder andere Lauf (Arbeits-Branches, Pull Requests, Forks, manueller Start von `android.yml`) signiert mit einem Wegwerf-Schlüssel, den der Gradle-Schritt selbst erzeugt; Keystore und Passwort gibt es nur in diesem Schritt. Branch- und PR-APKs wechseln darum bei jedem Lauf die Signatur (vor dem Installieren die `.dev`-App deinstallieren) und können die echte App nicht ersetzen (`applicationIdSuffix = ".dev"`). `release.yml` hat keinen Start von Hand. Der Job `secrets-check` meldet Signatur- und Website-Secrets, die noch auf Repository-Ebene liegen (Fehler bei einem Push auf `main` oder `dev`, sonst eine Warnung). Die Environments und ihre Deployment-Branches richtet der Inhaber in GitHub ein; das ist aus dem Repository heraus nicht nachprüfbar. Weiterhin gilt: Sein GitHub-Konto ist mit einem Hardware-Key gesichert, veröffentlicht wird nur nach grüner CI. Voraussetzungen: Zwei-Faktor-Anmeldung bei GitHub (Passkey oder Security Key), eine Offline-Sicherung der Keystore-Datei und ihres Passworts (ohne sie lässt sich keine installierte App mehr aktualisieren), Abhängigkeiten nur bewusst aktualisieren (Gradle-Prüfsummen, `Cargo.lock`) |
 | F24 | Titel werden ohne Leerraum am Rand gespeichert | Absicht (Suche, Sortierung, Anzeige); alles Geheime bleibt Zeichen für Zeichen erhalten |
 
 ### 4.2 Nachprüfbarkeit des Builds
@@ -139,8 +144,12 @@ Nichts davon gibt einem Angreifer ohne Passwort **und** zweiten Faktor Zugriff a
 - **Abhängigkeiten der App (L3, erledigt):** `app/gradle/verification-metadata.xml` enthält die SHA-256-Prüfsumme
   jedes Gradle-Pakets (607 Pakete, auch die Windows-Varianten). Ein Paket, das unterwegs verändert wurde oder neu
   dazukommt, bricht den Build ab. Neue oder aktualisierte Abhängigkeiten: `./gradlew --write-verification-metadata
-  sha256 help` und die Änderung der Datei im Pull Request prüfen. Für den Rust-Kern sichern `Cargo.lock` und
-  `cargo deny` dasselbe.
+  sha256 help` und die Änderung der Datei im Pull Request prüfen. Für den Rust-Kern sichert `Cargo.lock` die
+  Versionen; `cargo audit` prüft sie in der CI und nachts auf bekannte Lücken (ein `cargo deny` mit Regeln für
+  Quellen und Lizenzen ist nicht eingerichtet).
+- **Gradle selbst (GP-M23):** Vor jedem `gradlew` prüfen `android.yml` und `release.yml` die SHA-256 von
+  `gradle-wrapper.jar` (gegen die Prüfsumme von services.gradle.org); scheitert sie, läuft Gradle nicht. Die
+  heruntergeladene Verteilung prüft `distributionSha256Sum` in `app/gradle/wrapper/gradle-wrapper.properties`.
 - **Reproduzierbarkeit (L4, B17):** Der Nachtlauf baut den Kern zweimal in verschiedenen Ordnern und verlangt
   byte-gleiche Ergebnisse. Für die ganze APK (Kotlin, Ressourcen) ist das noch nicht nachgewiesen; das gehört zu
   festen Releases (Issue #6). Seit 21.11.2026 legt `rust-toolchain.toml` eine Rust-Version für lokale Builds, CI
@@ -152,12 +161,15 @@ Nichts davon gibt einem Angreifer ohne Passwort **und** zweiten Faktor Zugriff a
   höchstens 600 MB in eine Datei statt in den Speicher, Entwürfe und auf dem stabilen Kanal Vorabversionen werden
   nie angeboten, Installation nur nach Zustimmung. Wer den Signaturschlüssel hat, kann Updates ausliefern; das war
   mit der APK-Signatur schon vorher so (AUDIT 4.1). **Richtiggestellt am 21.11.2026:** Hier stand, ein
-  kompromittiertes GitHub-Konto allein reiche nicht. Das stimmt nicht. Der Schlüssel liegt als Secret im
-  Repository; wer Schreibrecht hat, kann einen Workflow ändern und damit signieren. Ein übernommenes Konto des
-  Inhabers reicht also für ein signiertes Update. Schutz dagegen: Schreibrecht hat nur der Inhaber, sein Konto ist
-  mit einem Hardware-Key gesichert; veröffentlicht wird nur nach einer grünen CI für genau diesen Commit, und der
-  Release-Workflow kommt immer vom Standardzweig, ein Pull Request kann ihn nicht ändern (`release.yml`,
-  `workflow_run`). Die signierte Prüfsummenliste nennt ihre Version, die App prüft sie: Eine alte, gültig signierte
+  kompromittiertes GitHub-Konto allein reiche nicht. Das stimmt nicht. Wer Schreibrecht hat, kann einen Workflow
+  ändern und damit signieren. Ein übernommenes Konto des Inhabers reicht also für ein signiertes Update. **Seit der
+  Großprüfung** liegt der Schlüssel nicht mehr auf Repository-Ebene, sondern nur in den Environments
+  `signing` und `release` (4.1): Ein Push auf einen anderen Branch als `main` oder `dev` erreicht ihn auch mit einem
+  geänderten Workflow nicht mehr; wer auf `main` oder `dev` schreiben kann, weiterhin. Schutz dagegen: Schreibrecht
+  hat nur der Inhaber, sein Konto ist mit einem Hardware-Key gesichert; veröffentlicht wird nur nach einer grünen CI
+  für genau diesen Commit, und der Release-Workflow kommt immer vom Standardzweig, ein Pull Request kann ihn nicht
+  ändern (`release.yml`, `workflow_run`, kein `workflow_dispatch`). Der öffentliche Teil des Schlüssels kommt aus der
+  Repository-Variable `GHUL_UPDATE_KEY`; `publish` prüft die Signatur dagegen, bevor etwas veröffentlicht wird. Die signierte Prüfsummenliste nennt ihre Version, die App prüft sie: Eine alte, gültig signierte
   Datei lässt sich nicht unter einem neuen Tag anbieten (K-6). Rücksprung auf ältere Versionen bietet die App nie
   an (nur neuere).
 
@@ -165,7 +177,6 @@ Nichts davon gibt einem Angreifer ohne Passwort **und** zweiten Faktor Zugriff a
 
 | Nr. | Grenze |
 |---|---|
-| L2 | Kein unabhängiger Audit: Eigene Tests finden nur, woran man denkt |
 | L6 | Der Server sah Anzahl, Größe und Änderungszeit der Dateien und die IP-Adresse (**obsolet**, keine Server mehr). Ähnlich sichtbar ist heute in der Suite-Datei und der Arbeitskopie: Anzahl und ungefähre Größe der Dokumente (aufgerundet auf 64 KiB), nicht ihre Namen |
 | - | **Alte Kopien ohne Server** ([`UMBAU-GHULDOCS.md`](UMBAU-GHULDOCS.md), Abschnitt 2): Eine Kopie der Suite-Datei, die schon irgendwo liegt, lässt sich nachträglich nicht unbrauchbar machen. Wer das alte Passwort **und** den alten zweiten Faktor hat, öffnet sie mit einer frischen Installation (wie bei VeraCrypt), mit dem Stand und den Dokumenten von damals. Abhilfe: alte Kopien löschen (die App sagt das nach jeder Schutzänderung) und den zweiten Faktor tauschen |
 | - | Wer den Stick hat, kann die Suite-Datei löschen oder durch eine ältere ersetzen. Die App erkennt das beim Öffnen, gegen den Verlust helfen nur Kopien an einem zweiten Ort |
@@ -202,7 +213,7 @@ behoben (Testprotokoll PR-…), „klein“ (Randfall, Komfort, Werkzeug) kommt 
 | Nr. | Bereich | Punkt |
 |---|---|---|
 | K-1 | Windows | Der portable Modus hinterlässt Spuren auf dem PC: zuletzt benutzte Ordner und Dateinamen der Windows-Dateidialoge (Registry, ComDlg32), die von JNA entpackte DLL und `hsperfdata` in `%TEMP%`. Inhalte der Suite sind nicht darunter |
-| K-2 | Release | Ab der 99. Vorabversion einer Version bekommen Builds denselben `versionCode` (Begrenzung auf 98); `release.yml` sollte dann abbrechen |
+| K-2 | Release | **Erledigt (Großprüfung):** Ab der 99. Vorabversion einer Version bekämen Builds denselben `versionCode` (Begrenzung auf 98); `release.yml` bricht dann ab und verlangt, `VERSION` anzuheben |
 | K-3 | CI | Ein sofort abgebrochener Monkey-Lauf gilt als „ohne Absturz“; ein leeres Systemprotokoll im Emulator nur als Warnung |
 | K-4 | Werkzeuge | `precheck.sh` räumt relativ zum Aufrufordner auf und meldet bei übersprungenen Prüfungen trotzdem „Alles grün“ |
 | K-5 | Werkzeuge | `intent-attacks.sh` greift noch Aktionen von GhulMail und GhulDrive an, die es nicht mehr gibt; der deutsche Rundgang (`tour-de.yaml`) zeigt GhulDocs und zwei Optionsseiten nicht |
@@ -224,7 +235,7 @@ behoben (Testprotokoll PR-…), „klein“ (Randfall, Komfort, Werkzeug) kommt 
 | K-21 | Windows | Die PDF-Ansicht begrenzt die Seitenhöhe nicht (ein präpariertes PDF kann den Speicher ausschöpfen) |
 | K-22 | Android | Der Absturzbericht erscheint vor dem Bildschirmschutz und wird ohne „sensibel“-Markierung kopiert (er enthält nur Stacktraces) |
 | K-23 | Website | Der Hinweis „Keine Cookies“ bleibt unsichtbar in der Tab-Reihenfolge; Kontrast der blassen Schrift knapp unter WCAG AA; doppelt vorgelesene Laufband-Liste und Bildtexte |
-| K-24 | Texte | „Alles wird nur auf diesem Gerät geprüft“ auch bei eingeschalteter Leak-Prüfung; Hinweis der Sperr-Benachrichtigung „Schütteln oder ‚Sperren‘ sperrt sofort“; Reste von GhulMail/GhulDrive im Testplan; Hinweis zu Testschlüsseln auf der Download-Seite des Testservers |
+| K-24 | Texte | „Alles wird nur auf diesem Gerät geprüft“ auch bei eingeschalteter Leak-Prüfung; Hinweis der Sperr-Benachrichtigung „Schütteln oder ‚Sperren‘ sperrt sofort“; Reste von GhulMail/GhulDrive im Testplan; Hinweis zu Testschlüsseln auf der Download-Seite des Testservers (**obsolet:** Testserver und `public/` entfernt) |
 | K-25 | Website | Ein früher hochgeladenes `report.php` könnte auf dem Webspace noch liegen (der Upload löscht nichts): von Hand prüfen und löschen |
 | K-26 | Kern | `create_from_vault` und `share_as_vault` legen noch Suiten bzw. Tresordateien mit einem einzelnen Key ohne Backup an; die App fordert danach beim Entfernen ein Backup, verlangt es aber nicht beim Anlegen |
 | K-27 | App | Das Löschsymbol eines Faktors erscheint auch, wenn Entfernen abgelehnt wird (letzter Faktor, letztes Backup); der Hinweis „Backup fehlt“ steht doppelt (Liste und Dialog) |
@@ -239,6 +250,19 @@ behoben (Testprotokoll PR-…), „klein“ (Randfall, Komfort, Werkzeug) kommt 
 | K-36 | Kern | Entfernen zwei Geräte unabhängig denselben Key, haben beide dieselben Slots, aber verschiedene Faktorgeheimnisse; öffnet das eine die Datei des anderen, bleibt das Schnell-Entsperren eingerichtet und scheitert beim nächsten Mal (dann Passwort und Key; kein Zugang für Fremde) |
 | K-37 | Android | Nach dem ersten sicheren Speichern hängt der Zugriff auf die Suite-Datei an der Freigabe des Ordners (Android nimmt beim Umbenennen den Zugriff auf das einzelne Dokument weg). Wird die Freigabe zurückgenommen oder von Android verdrängt (höchstens 128 dauerhafte Freigaben), ist die Datei „nicht erreichbar“, bis der Ordner wieder freigegeben oder die Datei neu gewählt wird; kein Datenverlust. Gezielt „Ordner erneut freigeben“ anbieten. Auf einem Gerät prüfen, ob die Kennung nach dem Umbenennen dieselbe Form hat wie aus der Dateiauswahl (Testplan E19e) |
 | K-38 | Android | Während eines sicheren Speicherns sehen gleichzeitige Leser kurz keine Suite-Datei (höchstens eine falsche Meldung „nicht lesbar“, nichts geht kaputt); eine liegen gebliebene `<Name>.alt`, die sich nicht wegräumen lässt, verhindert jedes weitere Speichern an diesem Ort, ohne dass der Dialog sagt warum (eigener Fehlertext fehlt) |
+
+### 4.6 Restrisiken nach der Großprüfung
+
+| Nr. | Restrisiko |
+|---|---|
+| GP-M24 | Das MSI-Update unter Windows (Prüfsumme direkt vor `msiexec`, Datei bis zum Ende offen gehalten, Ergebnis beim nächsten Start) ist nur als Text des erzeugten Skripts getestet (`UpdateScriptTest`); ausgeführt wurde es auf Windows noch nicht. Code desselben Windows-Benutzers, der vor dem Start läuft, kann das Update weiter stören (Testplan Windows WG5) |
+| - | Windows selbst (Clippy, Build und Tests für Windows) und die Emulator-Abläufe (Maestro) laufen nur in der CI, nicht im lokalen Precheck |
+| GP-M19 | Die App-PIN ist mindestens 6 Ziffern lang und an den Hardware-Schlüssel des Geräts gebunden; der Zähler der Fehlversuche liegt aber in den Einstellungen der App. Wer ein gerootetes Gerät mit eingerichteter App-PIN hat, kann ihn umgehen und die PIN auf dem Gerät durchprobieren |
+| GP-M12, GP-M18 | Mit „Alles“ als Inhalt der Erinnerungen liegen Titel, Uhrzeit und Ort der Termine der nächsten 30 Tage mit einem Schlüssel ohne Bindung an ein entsperrtes Gerät auf dem Handy und gehen an Apps mit Zugriff auf Benachrichtigungen (unter Windows ins Info-Center); Standard ist „Mit Titel“ |
+| GP-H11 | Ändern zwei Geräte unabhängig den Schutz, wird nicht zusammengeführt; der Dialog sagt, was verloren geht, und nennt den Weg über „Als Tresor weitergeben“ |
+| GP-M44 | Der Android-Code (Schnell-Entsperren, Erinnerungen, USB-Key, sicheres Speichern) hat keine Unit-Tests; geprüft wird er im Emulator und von Hand |
+| - | Die Environments `signing`, `release` und `website` und ihre Deployment-Branches richtet der Inhaber in GitHub ein; bis die Secrets auf Repository-Ebene gelöscht sind, wirkt der Schutz aus 4.1 nicht (der Job `secrets-check` meldet es) |
+| - | Festgehaltene Tests auf echten Geräten fehlen noch (Testplan, besonders E19e und Abschnitt 40) |
 
 ## 5. Geprüft und in Ordnung
 
@@ -283,8 +307,10 @@ behoben (Testprotokoll PR-…), „klein“ (Randfall, Komfort, Werkzeug) kommt 
   Bildschirmschutz auch in der App-Vorschau, Passwortfelder ohne Vorschläge, Zwischenablage als sensibel markiert
   und beim Sperren geleert.
 - **CI und Repository:** kein `pull_request_target`, Actions auf feste Versionen gepinnt, nur Leserechte, keine
-  Secrets bei Pull Requests, `cargo audit`, `cargo deny` und gitleaks; keine Zugangsdaten, Serveradressen oder
-  echten Daten im Repository.
+  Secrets bei Pull Requests (sie laufen im Environment `ci` ohne Secrets und signieren mit einem Wegwerf-Schlüssel),
+  Signatur- und Website-Secrets nur in Environments (Kontrolle: Job `secrets-check`), Prüfsummen für
+  Gradle-Wrapper und Gradle-Verteilung, `cargo audit` und gitleaks; keine Zugangsdaten, Serveradressen oder echten
+  Daten im Repository.
 - **Website:** keine Cookies, nichts von fremden Servern, Content-Security-Policy; seit dem 17.11.2026 kein Skript
   mehr, das Daten annimmt (`report.php` entfernt).
 
@@ -315,4 +341,7 @@ RUSTSEC-2026-0387), `russh` und `pin-utils` aus dem Kern verschwunden; ihre Ausn
   speicherst; die Kopie für „Mit App öffnen“ wird beim Sperren gelöscht, was die andere App damit macht, liegt bei
   ihr.
 - **Windows portable:** nur auf eigenen Geräten entsperren; auf einem fremden PC kann ein Keylogger mitlesen.
+- **Schnell-Entsperren nach dem Update neu einrichten:** Fingerabdruck und App-PIN aus einer Version vor dem
+  21.11.2026 öffnen nicht mehr (die Gültigkeit steht jetzt fest in der Schnell-Datei). Die App sagt das; unter
+  Optionen → Entsperren richtest du sie mit Passwort und zweitem Faktor neu ein.
 - GhulSuite ist eine **Entwicklungsversion**: die Suite-Datei regelmäßig speichern und eine Kopie aufbewahren.

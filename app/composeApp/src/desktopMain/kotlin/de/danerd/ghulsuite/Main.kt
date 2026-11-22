@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 package de.danerd.ghulsuite
 
+import de.danerd.ghulsuite.model.autoLockSecondsNow
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.remember
@@ -61,12 +62,13 @@ fun main(args: Array<String>) {
     ShareFiles.wipe()
     // The core library lies next to the program (installer, portable folder, Gradle run).
     System.getProperty("compose.application.resources.dir")?.let { System.setProperty("jna.library.path", it) }
-    // A crash is noted with version and time (no contents of the suite), then handled as before.
+    // A crash is noted with version and time (no contents of the suite, no messages: the report
+    // can be seen before unlocking), then handled as before.
     val previous = Thread.getDefaultUncaughtExceptionHandler()
     Thread.setDefaultUncaughtExceptionHandler { t, e ->
         runCatching {
             val version = System.getProperty("jpackage.app-version") ?: "?"
-            File(DesktopPaths.dataDir, "absturz.txt").writeText("GhulSuite $version · ${java.time.Instant.now()}\n" + e.stackTraceToString())
+            File(DesktopPaths.dataDir, "absturz.txt").writeText("GhulSuite $version · ${java.time.Instant.now()}\n" + crashTrace(e))
         }
         previous?.uncaughtException(t, e) ?: e.printStackTrace()
     }
@@ -178,7 +180,7 @@ fun main(args: Array<String>) {
                     // A system dialog (e.g. Windows asking for the key PIN) must not lock.
                     val waitingForKey = state.busy
                     // A few seconds of grace, so that a short switch (e.g. to a system dialog) does not lock.
-                    val autoLock = maxOf(backend.settings.autoLockSeconds * 1000L, 3000L)
+                    val autoLock = maxOf(backend.autoLockSecondsNow() * 1000L, 3000L)
                     // A running background job is not cut off: the lock
                     // follows when it ends, unless the user is back by then. Ctrl+L locks at once.
                     when {

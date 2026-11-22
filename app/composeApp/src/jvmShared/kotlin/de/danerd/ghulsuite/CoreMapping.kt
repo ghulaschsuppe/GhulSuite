@@ -107,6 +107,7 @@ internal fun GhulException.toVault(): VaultException {
         is GhulException.NoVault -> VaultException(VaultErrorKind.STORAGE, d)
         is GhulException.QuickUnlockInvalid -> VaultException(VaultErrorKind.QUICK_INVALID, d)
         is GhulException.QuickUnlockExpired -> VaultException(VaultErrorKind.QUICK_EXPIRED, d)
+        is GhulException.QuickUnlockOutdated -> VaultException(VaultErrorKind.QUICK_OUTDATED, d)
         is GhulException.QuickUnlockUnavailable -> VaultException(VaultErrorKind.QUICK_UNAVAILABLE, d)
         is GhulException.Network -> VaultException(VaultErrorKind.NETWORK, msg)
         is GhulException.CertUntrusted -> VaultException(VaultErrorKind.CERT_UNTRUSTED, fingerprint)
@@ -115,6 +116,8 @@ internal fun GhulException.toVault(): VaultException {
         is GhulException.UpdateRequired -> VaultException(VaultErrorKind.UPDATE_REQUIRED, d)
         is GhulException.OldFormat -> VaultException(VaultErrorKind.OLD_FORMAT, d)
         is GhulException.DocsLimit -> VaultException(VaultErrorKind.DOCS_LIMIT, "$used|$limit|$needed|$suite")
+        is GhulException.DeleteIncomplete -> VaultException(VaultErrorKind.DELETE_INCOMPLETE, msg)
+        is GhulException.NoSpace -> VaultException(VaultErrorKind.NO_SPACE, "$free|$needed")
     }
 }
 
@@ -137,11 +140,16 @@ internal fun FidoException.toVault(): VaultException {
 }
 
 /**
- * A file name that stays inside the share folder: no path separators or control characters,
- * not "." or "..", and unique among the files shared together.
+ * A file name that stays inside the share folder: no path separators, control characters or
+ * characters Windows does not allow (":" would write an alternate data stream instead of the
+ * file), no trailing dots or spaces (Windows drops them, "a.exe." would be "a.exe"), not "." or
+ * "..", and unique among the files shared together.
  */
 internal fun safeFileName(name: String, used: MutableSet<String>): String {
-    var base = name.map { if (it == '/' || it == '\\' || it.code < 32) '_' else it }.joinToString("").trim().take(120)
+    val clean = name.map { if (it in "/\\<>:\"|?*" || it.code < 32) '_' else it }.joinToString("").trim().trimEnd('.', ' ')
+    // Shortened, the ending stays: cutting "aaa…a.exe.txt" must not leave "aaa…a.exe".
+    val dot = clean.lastIndexOf('.').takeIf { it > 0 && clean.length - it <= 16 } ?: clean.length
+    var base = if (clean.length <= 120) clean else clean.substring(0, 120 - (clean.length - dot)).trimEnd('.', ' ') + clean.substring(dot)
     if (base.isEmpty() || base.all { it == '.' }) base = "file"
     var candidate = base
     var n = 2

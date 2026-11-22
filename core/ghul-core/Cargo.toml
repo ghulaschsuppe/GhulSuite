@@ -40,7 +40,9 @@ sha1 = "0.10"
 base64 = "0.22"
 zxcvbn = { version = "3.1", default-features = false }
 serde_json = "1"
-zip = { version = "9", default-features = false, features = ["deflate", "aes-crypto"] }
+# M43: only "deflate": the import reads plain ZIP exports (1Password, Proton Pass); an encrypted
+# entry is refused as ImportEncrypted. No AES of the ZIP format (it pulled in pbkdf2 and more).
+zip = { version = "9", default-features = false, features = ["deflate"] }
 # CRC-32 of the entries of a suite file (written and read as a stream, app/zipstream.rs)
 crc32fast = "1"
 # Network (update check, password leak check): pure Rust with ring, no OpenSSL/C dependencies
@@ -54,6 +56,12 @@ webpki-roots = "1"
 [dev-dependencies]
 rand_chacha = "0.3"
 
+[target.'cfg(unix)'.dependencies]
+# H12: free space of the device before content is staged (statvfs; already in the tree via tokio).
+libc = "0.2"
+
 [target.'cfg(windows)'.dependencies]
 # Security keys through the system's WebAuthn API (webauthn.dll): see src/key_device.rs.
-windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Networking_WindowsWebServices"] }
+# Win32_Storage_FileSystem: free space before content is staged (GetDiskFreeSpaceExW, H12).
+# Win32_System_Threading: whether the process of a staging folder still runs (OpenProcess).
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Networking_WindowsWebServices", "Win32_Storage_FileSystem", "Win32_System_Threading"] }

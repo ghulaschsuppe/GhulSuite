@@ -109,7 +109,8 @@ fn public_calendar_files_through_a_calendar() {
     let d = Dirs::new("ics-files");
     let s = d.suite();
     let kf = generate_keyfile();
-    s.create(options("pw pw pw pw", Some(kf.clone()), &[(VaultKind::Cal, "Kalender")]), None, None, None).unwrap();
+    s.create(options("pw pw pw pw-Kq7wZ", Some(kf.clone()), &[(VaultKind::Cal, "Kalender")]), None, None, None)
+        .unwrap();
     let calendar = |name: &str| {
         s.cal_save_calendar(CalCalendar {
             id: String::new(),
@@ -144,6 +145,6 @@ fn public_calendar_files_through_a_calendar() {
     assert_eq!(copied, count(&all), "exported and read again");
     assert_eq!(count(&copy), count(&all));
     s.lock();
-    s.unlock("pw pw pw pw".into(), None, None, None, Some(kf)).unwrap();
+    s.unlock("pw pw pw pw-Kq7wZ".into(), None, None, None, Some(kf)).unwrap();
     assert_eq!(count(&copy), copied);
 }

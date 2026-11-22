@@ -74,8 +74,8 @@ class SingleBackendTest {
         override fun panicLock() = lock()
         override fun biometricAvailable() = false
         override fun quickUnlockReady() = de.danerd.ghulsuite.model.QuickUnlockReady(false, false)
-        override suspend fun enableBiometricUnlock(password: String) {}
-        override suspend fun enablePinUnlock(password: String, pin: String) {}
+        override suspend fun enableBiometricUnlock(proof: de.danerd.ghulsuite.model.FactorProofUi, hours: Int, onTouchNeeded: () -> Unit) {}
+        override suspend fun enablePinUnlock(proof: de.danerd.ghulsuite.model.FactorProofUi, pin: String, hours: Int, onTouchNeeded: () -> Unit) {}
         override fun disableQuickUnlock() {}
         override fun disableQuickUnlockMethod(bio: Boolean) {}
         override suspend fun unlockWithBiometric() {}
@@ -86,7 +86,7 @@ class SingleBackendTest {
     private fun vaultFile(dir: File, kf: ByteArray): ByteArray {
         val s = GhulSuite(localStorage(File(dir, "maker").path), File(dir, "maker-local").path)
         s.create(
-            SetupOptions("Master Passwort!", kf, "Key", "Datei", "Code", 65536u, 3u, listOf(NewVault(VaultKind.PASS, "Privat"))),
+            SetupOptions("Gruener Kaktus singt 1987!", kf, "Key", "Datei", "Code", 65536u, 3u, listOf(NewVault(VaultKind.PASS, "Privat"))),
             null, null, null,
         )
         return s.exportVault(s.listVaults().single().id)
@@ -98,7 +98,7 @@ class SingleBackendTest {
             localStorage(Files.createTempDirectory(dir.toPath(), "check").toFile().path),
             Files.createTempDirectory(dir.toPath(), "check-local").toFile().path,
         )
-        t.openSingleVault(file.readBytes(), "Master Passwort!", null, null, null, kf)
+        t.openSingleVault(file.readBytes(), "Gruener Kaktus singt 1987!", null, null, null, kf)
         return t.listVaults().single().name
     }
 
@@ -124,7 +124,7 @@ class SingleBackendTest {
             val ref = SuiteFileRef(target.absolutePath, target.name)
             val b = Backend(dir)
 
-            assertEquals(VaultKindUi.PASS, b.openSingle(ref, target.readBytes(), "Master Passwort!", null, kf) {})
+            assertEquals(VaultKindUi.PASS, b.openSingle(ref, target.readBytes(), "Gruener Kaktus singt 1987!", null, kf) {})
             assertEquals(ref, b.singleFile())
             val id = b.listVaults().single().id
             // Nothing of a suite while a vault is open on its own.
@@ -143,7 +143,7 @@ class SingleBackendTest {
             waitUntil("folder removed") { b.pendingSingleWrites().isEmpty() }
 
             // The storage is gone while locking: the changes stay and are offered again.
-            b.openSingle(ref, target.readBytes(), "Master Passwort!", null, kf) {}
+            b.openSingle(ref, target.readBytes(), "Gruener Kaktus singt 1987!", null, kf) {}
             b.failWrites = true
             b.renameVault(b.listVaults().single().id, "Nicht geschrieben")
             b.lock()
@@ -159,7 +159,7 @@ class SingleBackendTest {
             assertTrue(b.pendingSingleWrites().isEmpty())
 
             // Given up: gone, the file stays as it was.
-            b.openSingle(ref, target.readBytes(), "Master Passwort!", null, kf) {}
+            b.openSingle(ref, target.readBytes(), "Gruener Kaktus singt 1987!", null, kf) {}
             b.failWrites = true
             b.renameVault(b.listVaults().single().id, "Verworfen")
             b.lock()
@@ -183,12 +183,12 @@ class SingleBackendTest {
             val target = File(dir, "Privat.ghlpss").apply { writeBytes(original) }
             val ref = SuiteFileRef(target.absolutePath, target.name)
             val b = Backend(dir)
-            b.openSingle(ref, target.readBytes(), "Master Passwort!", null, kf) {}
+            b.openSingle(ref, target.readBytes(), "Gruener Kaktus singt 1987!", null, kf) {}
             val id = b.listVaults().single().id
 
             // Someone else writes the file (another device, a synced folder).
             val other = Backend(File(dir, "other").apply { mkdirs() })
-            other.openSingle(ref, target.readBytes(), "Master Passwort!", null, kf) {}
+            other.openSingle(ref, target.readBytes(), "Gruener Kaktus singt 1987!", null, kf) {}
             other.renameVault(other.listVaults().single().id, "Von woanders")
             assertEquals(SingleSaveUi.SAVED, other.saveSingle())
             other.lock()
@@ -210,7 +210,7 @@ class SingleBackendTest {
             waitUntil("closed") { b.pendingSingleWrites().isEmpty() }
 
             // A leftover over a file changed elsewhere: offered, not written unasked.
-            b.openSingle(ref, target.readBytes(), "Master Passwort!", null, kf) {}
+            b.openSingle(ref, target.readBytes(), "Gruener Kaktus singt 1987!", null, kf) {}
             b.failWrites = true
             b.renameVault(b.listVaults().single().id, "Liegen geblieben")
             b.lock()
@@ -228,7 +228,7 @@ class SingleBackendTest {
             assertTrue(b.pendingSingleWrites().isEmpty())
 
             // A file cut short: said, so giving up is not taken lightly.
-            b.openSingle(ref, target.readBytes(), "Master Passwort!", null, kf) {}
+            b.openSingle(ref, target.readBytes(), "Gruener Kaktus singt 1987!", null, kf) {}
             b.failWrites = true
             b.renameVault(b.listVaults().single().id, "Abgebrochen")
             b.lock()
@@ -253,7 +253,7 @@ class SingleBackendTest {
             val target = File(dir, "Privat.ghlpss").apply { writeBytes(vaultFile(dir, kf)) }
             val ref = SuiteFileRef(target.absolutePath, target.name)
             val b = Backend(dir)
-            b.openSingle(ref, target.readBytes(), "Master Passwort!", null, kf) {}
+            b.openSingle(ref, target.readBytes(), "Gruener Kaktus singt 1987!", null, kf) {}
             b.failWrites = true
             b.renameVault(b.listVaults().single().id, "Wartet")
             b.lock()
@@ -262,7 +262,7 @@ class SingleBackendTest {
             assertTrue(b.hasPendingSingleWrite(ref))
 
             // Opening the same file again: refused until the waiting changes are dealt with.
-            val e = assertFailsWith<VaultException> { b.openSingle(ref, target.readBytes(), "Master Passwort!", null, kf) {} }
+            val e = assertFailsWith<VaultException> { b.openSingle(ref, target.readBytes(), "Gruener Kaktus singt 1987!", null, kf) {} }
             assertEquals(de.danerd.ghulsuite.model.VaultErrorKind.SINGLE_PENDING, e.kind)
 
             // Its record cannot be read: the changes stay, offered as "save as".
@@ -277,7 +277,7 @@ class SingleBackendTest {
             assertTrue(!b.hasPendingSingleWrite(ref))
 
             // Now it opens again.
-            b.openSingle(ref, target.readBytes(), "Master Passwort!", null, kf) {}
+            b.openSingle(ref, target.readBytes(), "Gruener Kaktus singt 1987!", null, kf) {}
             assertEquals(ref, b.singleFile())
 
             // Saved as a new file while it is being locked: the closed state is not brought back.
@@ -304,7 +304,7 @@ class SingleBackendTest {
             val refTwo = SuiteFileRef(two.absolutePath, two.name)
             val b = Backend(dir)
 
-            b.openSingle(refOne, one.readBytes(), "Master Passwort!", null, kf) {}
+            b.openSingle(refOne, one.readBytes(), "Gruener Kaktus singt 1987!", null, kf) {}
             one.delete()
             b.renameVault(b.listVaults().single().id, "Wieder da")
             assertEquals(SingleSaveUi.MISSING, b.saveSingle())
@@ -326,7 +326,7 @@ class SingleBackendTest {
             assertEquals("Wieder da", nameIn(dir, one, kf))
 
             // A leftover for "Zwei" whose file is gone meanwhile: offered as written anew.
-            b.openSingle(refTwo, two.readBytes(), "Master Passwort!", null, kf) {}
+            b.openSingle(refTwo, two.readBytes(), "Gruener Kaktus singt 1987!", null, kf) {}
             b.failWrites = true
             b.renameVault(b.listVaults().single().id, "Zwei neu")
             b.lock()
@@ -338,8 +338,8 @@ class SingleBackendTest {
             assertEquals(SingleSaveUi.MISSING, b.retrySingleWrite(p.key))
 
             // While it waits, opening "Zwei" is refused without closing what is open ("Eins").
-            b.openSingle(refOne, one.readBytes(), "Master Passwort!", null, kf) {}
-            val e = assertFailsWith<VaultException> { b.openSingle(refTwo, bytes, "Master Passwort!", null, kf) {} }
+            b.openSingle(refOne, one.readBytes(), "Gruener Kaktus singt 1987!", null, kf) {}
+            val e = assertFailsWith<VaultException> { b.openSingle(refTwo, bytes, "Gruener Kaktus singt 1987!", null, kf) {} }
             assertEquals(de.danerd.ghulsuite.model.VaultErrorKind.SINGLE_PENDING, e.kind)
             assertEquals(refOne, b.singleFile(), "still open")
 
@@ -360,7 +360,7 @@ class SingleBackendTest {
             val kf = generateKeyfile()
             val target = File(dir, "Privat.ghlpss").apply { writeBytes(vaultFile(dir, kf)) }
             val b = Backend(dir)
-            b.openSingle(SuiteFileRef(target.absolutePath, target.name), target.readBytes(), "Master Passwort!", null, kf) {}
+            b.openSingle(SuiteFileRef(target.absolutePath, target.name), target.readBytes(), "Gruener Kaktus singt 1987!", null, kf) {}
             b.failWrites = true
             b.renameVault(b.listVaults().single().id, "Alt")
             b.lock()
@@ -388,7 +388,7 @@ class SingleBackendTest {
             val target = File(dir, "Privat.ghlpss").apply { writeBytes(vaultFile(dir, kf)) }
             val ref = SuiteFileRef(target.absolutePath, target.name)
             val b = Backend(dir)
-            b.openSingle(ref, target.readBytes(), "Master Passwort!", null, kf) {}
+            b.openSingle(ref, target.readBytes(), "Gruener Kaktus singt 1987!", null, kf) {}
             b.renameVault(b.listVaults().single().id, "Schon drin")
             // The write reached the file, its record did not (simulated).
             target.writeBytes(b.singleVaultBytes())

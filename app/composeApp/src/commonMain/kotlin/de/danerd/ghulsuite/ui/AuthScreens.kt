@@ -76,6 +76,8 @@ fun AuthListScreen(state: AppState, padding: PaddingValues) {
     var revealed by remember { mutableStateOf<Map<String, Long>>(emptyMap()) }
     var sorting by remember { mutableStateOf(false) }
     var exporting by remember { mutableStateOf<Pair<TotpCodeUi, String>?>(null) }
+    // M13: the secret as a QR code only after the master password.
+    var askQr by remember { mutableStateOf<TotpCodeUi?>(null) }
     val settings = state.backend.settings
     val vaults = state.vaultsOf(VaultKindUi.TOTP)
     val filter = state.authVault
@@ -130,7 +132,7 @@ fun AuthListScreen(state: AppState, padding: PaddingValues) {
                     add(SelAction(Icons.Filled.Edit, stringResource(Res.string.a_rename)) { selected.clear(); renaming = one })
                     add(SelAction(Icons.Filled.QrCode2, stringResource(Res.string.auth_export_qr)) {
                         selected.clear()
-                        state.run(block = { state.backend.totpUri(one.vaultId, one.id) }) { exporting = one to it }
+                        askQr = one
                     })
                 }
                 // Favourite for all of them at once (as in GhulDocs): all favourites already, it takes it back.
@@ -140,8 +142,9 @@ fun AuthListScreen(state: AppState, padding: PaddingValues) {
                     selected.clear()
                     state.run(block = { list.forEach { state.backend.setFavorite(it.vaultId, it.id, !allFav) } }) { state.changed() }
                 })
-                // Picked entries of one vault: into a vault file of their own.
-                chosen.map { it.vaultId }.distinct().singleOrNull()?.let { v ->
+                // Picked entries of one vault: into a vault file of their own (not from a vault
+                // opened on its own: the proof would be that of the own suite).
+                chosen.map { it.vaultId }.distinct().singleOrNull()?.takeIf { state.single == null }?.let { v ->
                     add(SelAction(Icons.Filled.Share, stringResource(Res.string.share_vault_action)) {
                         selected.clear()
                         sharing = v to chosen.map { it.id }
@@ -232,6 +235,17 @@ fun AuthListScreen(state: AppState, padding: PaddingValues) {
                 }
             }
             HintText(stringResource(Res.string.auth_sort_hint))
+        }
+    }
+    askQr?.let { c ->
+        PasswordGateDialog(
+            state, stringResource(Res.string.auth_export_qr), stringResource(Res.string.auth_export_warning),
+            confirmLabel = stringResource(Res.string.a_show),
+            onDismiss = { askQr = null },
+        ) { password ->
+            askQr = null
+            // The core gives the secret out only with the master password (M13).
+            state.run(block = { state.backend.totpUri(c.vaultId, c.id, password) }) { exporting = c to it }
         }
     }
     exporting?.let { (c, uri) ->
@@ -354,6 +368,7 @@ fun AddTotpScreen(state: AppState, vaultId: String, padding: PaddingValues, star
 
     fun done() {
         state.changed()
+        state.promptSave()
         state.pop()
     }
 

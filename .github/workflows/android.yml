@@ -4,7 +4,7 @@ name: Android & Kern
 on:
   push:
     branches: ['**']
-    paths: ['core/**', 'app/**', 'docs/testvectors/**', 'tools/**', '.github/workflows/android.yml', '.github/actions/ftps-upload/**',
+    paths: ['core/**', 'app/**', 'docs/testvectors/**', 'tools/**', '.github/workflows/android.yml',
             '!app/maestro/**', '!tools/ci-emulator.sh', '!tools/run-maestro.sh', '!tools/check-reminders.sh']
   # Every pull request: "build" and "Windows-App (Installer und portable Version)" are required
   # checks. They come from the jobs "build-check" and "windows-check", which always run and report
@@ -26,6 +26,10 @@ env:
   CARGO_INCREMENTAL: "0"
   NDK_VERSION: 28.2.13676358
   CARGO_NDK_VERSION: 4.1.2
+  # SHA-256 of app/gradle/wrapper/gradle-wrapper.jar (Gradle 8.14.3, as services.gradle.org lists
+  # it): a swapped wrapper would run before distributionSha256Sum is checked. Change both
+  # together when Gradle is updated.
+  GRADLE_WRAPPER_SHA256: 7d3a4ac4de1c32b59bc6a4eb8ecb8e612ccd0cf1ae1e99f66902da64df296172
 
 jobs:
   testvectors:
@@ -100,7 +104,7 @@ jobs:
           EVENT: ${{ github.event_name }}
         run: |
           # A push to a working branch with an open, mergeable pull request: the run of the pull
-          # request checks the same commits and uploads them (see below), so this run does nothing.
+          # request checks the same commits (and keeps the packages as artifacts), so this run does nothing.
           # Before, every push ran everything twice side by side. main and dev always run on push.
           # When asking fails, or the pull request has conflicts (GitHub then starts no run for
           # it), this run does everything as before.
@@ -111,7 +115,7 @@ jobs:
               mergeable=$(gh api "repos/$GITHUB_REPOSITORY/pulls/$pr" -q '.mergeable' 2> /dev/null) || mergeable=""
             fi
             if [ "$mergeable" = true ]; then
-              echo "Offener Pull Request #$pr für $GITHUB_REF_NAME: dessen Lauf prüft und lädt hoch, dieser Lauf entfällt."
+              echo "Offener Pull Request #$pr für $GITHUB_REF_NAME: dessen Lauf prüft, dieser Lauf entfällt."
               echo "core=false" >> "$GITHUB_OUTPUT"; echo "code=false" >> "$GITHUB_OUTPUT"; exit 0
             fi
           fi
@@ -120,9 +124,42 @@ jobs:
           fi
           files=$(git diff --name-only "$BASE" HEAD)
           if printf '%s\n' "$files" | grep -qE '^(core/|docs/testvectors/)'; then core=true; else core=false; fi
-          if printf '%s\n' "$files" | grep -qE '^(core/|app/|docs/testvectors/|tools/|\.github/workflows/android\.yml|\.github/actions/ftps-upload/)'; then code=true; else code=false; fi
+          if printf '%s\n' "$files" | grep -qE '^(core/|app/|docs/testvectors/|tools/|\.github/workflows/android\.yml)'; then code=true; else code=false; fi
           echo "Kern geändert: $core · App/Kern/Werkzeuge geändert: $code"
           echo "core=$core" >> "$GITHUB_OUTPUT"; echo "code=$code" >> "$GITHUB_OUTPUT"
+
+  # The signing key and the credentials of the live website belong in environments ("signing",
+  # "release", "website"), not on the repository level: there any job of any branch reads them.
+  # This job has no environment, so it sees only repository secrets. A warning on working
+  # branches and pull requests (the pull request that brings the environments must still merge),
+  # an error on a push to main or dev. Only the required checks (and so the release) wait for
+  # it: tests and artifacts run all the same.
+  secrets-check:
+    name: Keine Signatur- oder Website-Secrets auf Repository-Ebene
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions: {}
+    steps:
+      - env:
+          S1: ${{ secrets.ANDROID_KEYSTORE_BASE64 != '' }}
+          S2: ${{ secrets.ANDROID_KEYSTORE_PASSWORD != '' }}
+          S3: ${{ secrets.ANDROID_KEY_ALIAS != '' }}
+          S4: ${{ secrets.WEBSITE_FTP_SERVER != '' }}
+          S5: ${{ secrets.WEBSITE_FTP_USER != '' }}
+          S6: ${{ secrets.WEBSITE_FTP_PASSWORD != '' }}
+          PROTECTED: ${{ github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev') }}
+        run: |
+          left=""
+          [ "$S1" = true ] && left="$left ANDROID_KEYSTORE_BASE64"
+          [ "$S2" = true ] && left="$left ANDROID_KEYSTORE_PASSWORD"
+          [ "$S3" = true ] && left="$left ANDROID_KEY_ALIAS"
+          [ "$S4" = true ] && left="$left WEBSITE_FTP_SERVER"
+          [ "$S5" = true ] && left="$left WEBSITE_FTP_USER"
+          [ "$S6" = true ] && left="$left WEBSITE_FTP_PASSWORD"
+          [ -z "$left" ] && exit 0
+          msg="Secrets auf Repository-Ebene:$left. Sie gehören in die Environments (signing/release bzw. website) und sind auf Repository-Ebene zu löschen."
+          if [ "$PROTECTED" = true ]; then echo "::error::$msg"; exit 1; fi
+          echo "::warning::$msg"
 
   fuzz:
     name: Fuzzing (je 2 Minuten)
@@ -246,8 +283,16 @@ jobs:
           cargo test --locked --no-fail-fast -p ghul-core || { echo "::error::Tests (Windows)"; rc=1; }
           exit $rc
 
-      - name: FFI-Tests, Installer (MSI) und portable Version
+      # Gradle runs only with the checked wrapper (also when an earlier check failed: then the
+      # wrapper step must have passed all the same).
+      - name: Gradle-Wrapper prüfen (Prüfsumme von services.gradle.org)
+        id: wrapper
         if: ${{ !cancelled() }}
+        shell: bash
+        run: echo "$GRADLE_WRAPPER_SHA256  app/gradle/wrapper/gradle-wrapper.jar" | sha256sum -c -
+
+      - name: FFI-Tests, Installer (MSI) und portable Version
+        if: ${{ !cancelled() && steps.wrapper.outcome == 'success' }}
         working-directory: app
         shell: bash
         run: ./gradlew --no-daemon --console=plain --continue :composeApp:desktopTest :composeApp:packageMsi :composeApp:createDistributable
@@ -274,45 +319,16 @@ jobs:
           path: dist/
           retention-days: 30
 
-  windows-upload:
-    name: Windows-Pakete nach dev hochladen
-    # Also for pull requests from this repository (same trust as a push), never from forks.
-    if: github.repository_owner == 'ghulaschsuppe' && (github.event_name != 'pull_request' || (github.event.pull_request.head.repo.full_name == github.repository && github.head_ref != 'main' && github.head_ref != 'dev'))
-    needs: windows
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
-        with:
-          name: ghulsuite-windows-dev
-          path: dist/
-      - name: Zielordner auf dem Testserver
-        id: dest
-        shell: bash
-        run: |
-          # main -> ghulsuite/, every other branch -> ghulsuite/branches/<branch>/ (in the run of a
-          # pull request: the folder of its branch, as in the run of a push).
-          branch="${GITHUB_HEAD_REF:-$GITHUB_REF_NAME}"
-          if [ "$branch" = "main" ]; then dir=ghulsuite; else
-            b=$(printf '%s' "$branch" | tr -c 'A-Za-z0-9._-' '-'); dir="ghulsuite/branches/$b"; fi
-          echo "dir=$dir" >> "$GITHUB_OUTPUT"
-
-      - name: Upload auf den eigenen Testserver (Ordner ghulsuite/download bzw. Branch-Ordner)
-        uses: ./.github/actions/ftps-upload
-        with:
-          server: ${{ secrets.FTP_SERVER }}
-          user: ${{ secrets.FTP_USER }}
-          password: ${{ secrets.FTP_PASSWORD }}
-          local-dir: ./dist/
-          remote-dir: ${{ steps.dest.outputs.dir }}/download/
-
   build:
     # The required check "build" is the job "build-check" below, not this one.
     name: Android-App bauen und testen
     needs: changes
     if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
+    # Only a push to main or dev runs in the environment "signing" (it holds the real signing
+    # key; deployment branches main and dev, no approval, so every CI run goes on by itself).
+    # Every other run uses the environment "ci", which has no secrets: never an empty name.
+    environment: ${{ (github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev')) && 'signing' || 'ci' }}
     permissions:
       contents: read
       # For the screenshot comparison: the artifacts of the last run of dev.
@@ -366,29 +382,43 @@ jobs:
           cargo test --locked --no-fail-fast -p ghul-core || { echo "::error::Tests"; rc=1; }
           exit $rc
 
-      # The signing key only exists as a secret; the file lives in the runner's temp folder for
-      # this job only. Without the secret (pull requests from forks) the APK gets a throwaway key.
-      - name: Signaturschlüssel aus den Secrets
-        if: ${{ !cancelled() && github.repository_owner == 'ghulaschsuppe' && (github.event_name != 'pull_request' || (github.event.pull_request.head.repo.full_name == github.repository && github.head_ref != 'main' && github.head_ref != 'dev')) }}
-        env:
-          KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
-          KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
-          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
-        run: |
-          if [ -z "$KEYSTORE_B64" ]; then echo "::warning::Secret ANDROID_KEYSTORE_BASE64 fehlt, APK wird nur mit einem Wegwerf-Schlüssel signiert."; exit 0; fi
-          file="$RUNNER_TEMP/ghulsuite-release.jks"
-          printf '%s' "$KEYSTORE_B64" | base64 -d > "$file"
-          {
-            echo "GHUL_KEYSTORE_FILE=$file"
-            echo "GHUL_KEYSTORE_PASSWORD=$KEYSTORE_PASSWORD"
-            echo "GHUL_KEY_ALIAS=$KEY_ALIAS"
-          } >> "$GITHUB_ENV"
-
-      # Also runs when the Rust checks above failed, so their errors and the app's come in one run.
-      - name: FFI-Tests und APK
+      # The real signing key only reaches this job for a push to main or dev (environment
+      # "signing", whose secrets and deployment branches the owner limits to main and dev). Every
+      # other run (working branches, pull requests, manual starts, forks) signs with a throwaway
+      # key generated here: such an APK (applicationIdSuffix ".dev") cannot replace the real app.
+      # Keystore file and password exist only inside the Gradle step (not in GITHUB_ENV, so no
+      # later step sees them) and the file is deleted when it ends. Also runs when the Rust checks
+      # above failed, so their errors and the app's come in one run.
+      - name: Gradle-Wrapper prüfen (Prüfsumme von services.gradle.org)
+        id: wrapper
         if: ${{ !cancelled() }}
+        run: echo "$GRADLE_WRAPPER_SHA256  app/gradle/wrapper/gradle-wrapper.jar" | sha256sum -c -
+      - name: FFI-Tests und APK
+        if: ${{ !cancelled() && steps.wrapper.outcome == 'success' }}
         working-directory: app
-        run: ./gradlew --no-daemon --console=plain --continue :composeApp:desktopTest :composeApp:assembleDebug
+        env:
+          SIGN_REAL: ${{ github.repository_owner == 'ghulaschsuppe' && github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev') }}
+          KEYSTORE_B64: ${{ (github.repository_owner == 'ghulaschsuppe' && github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev')) && secrets.ANDROID_KEYSTORE_BASE64 || '' }}
+          KEYSTORE_PASSWORD: ${{ (github.repository_owner == 'ghulaschsuppe' && github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev')) && secrets.ANDROID_KEYSTORE_PASSWORD || '' }}
+          KEY_ALIAS: ${{ (github.repository_owner == 'ghulaschsuppe' && github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev')) && secrets.ANDROID_KEY_ALIAS || '' }}
+        run: |
+          file="$RUNNER_TEMP/ghulsuite-signing.jks"
+          trap 'rm -f "$file"' EXIT
+          if [ "$SIGN_REAL" = true ] && [ -n "$KEYSTORE_B64" ]; then
+            printf '%s' "$KEYSTORE_B64" | base64 -d > "$file"
+            export GHUL_KEYSTORE_FILE="$file" GHUL_KEYSTORE_PASSWORD="$KEYSTORE_PASSWORD" GHUL_KEY_ALIAS="$KEY_ALIAS"
+          else
+            [ "$SIGN_REAL" = true ] && echo "::warning::Secret ANDROID_KEYSTORE_BASE64 fehlt, APK wird nur mit einem Wegwerf-Schlüssel signiert."
+            # The throwaway key: same build as with the real key (not debuggable, so the emulator
+            # tests behave the same), only the signature differs.
+            pass=$(openssl rand -hex 24)
+            echo "::add-mask::$pass"
+            keytool -genkeypair -keystore "$file" -storepass "$pass" -keypass "$pass" -alias ghulsuite \
+              -keyalg RSA -keysize 2048 -validity 30 -dname "CN=GhulSuite throwaway CI key" -noprompt > /dev/null
+            export GHUL_KEYSTORE_FILE="$file" GHUL_KEYSTORE_PASSWORD="$pass" GHUL_KEY_ALIAS=ghulsuite
+          fi
+          echo "$GRADLE_WRAPPER_SHA256  gradle/wrapper/gradle-wrapper.jar" | sha256sum -c - || exit 1
+          ./gradlew --no-daemon --console=plain --continue :composeApp:desktopTest :composeApp:assembleDebug
 
       - name: APK bereitstellen
         run: |
@@ -410,6 +440,7 @@ jobs:
 
       # Every screen against the last green run of dev: a page with only what changed (before,
       # after, changed pixels in red), to look at each change on purpose. Never fails the run.
+      # Only in pull request runs, which never hold the real signing key; pillow is pinned.
       - name: Bildvergleich mit dev
         if: ${{ !cancelled() && github.event_name == 'pull_request' }}
         continue-on-error: true
@@ -419,7 +450,7 @@ jobs:
           id=$(gh run list -R "$GITHUB_REPOSITORY" -w android.yml -e push -b dev -s success -L 1 --json databaseId -q '.[0].databaseId')
           [ -n "$id" ] || { echo "Kein grüner Lauf auf dev zum Vergleichen."; exit 0; }
           gh run download "$id" -R "$GITHUB_REPOSITORY" -n screenshots -D "$RUNNER_TEMP/before"
-          pip install --quiet pillow
+          pip install --quiet 'pillow==11.3.0'
           python3 tools/compare-screenshots.py "$RUNNER_TEMP/before" app/composeApp/build/screenshots "$RUNNER_TEMP/screenshot-diff" \
             | tee -a "$GITHUB_STEP_SUMMARY"
 
@@ -430,27 +461,6 @@ jobs:
           path: ${{ runner.temp }}/screenshot-diff/
           retention-days: 30
           if-no-files-found: ignore
-
-      - name: Zielordner auf dem Testserver
-        id: dest
-        shell: bash
-        run: |
-          # main -> ghulsuite/, every other branch -> ghulsuite/branches/<branch>/ (in the run of a
-          # pull request: the folder of its branch, as in the run of a push).
-          branch="${GITHUB_HEAD_REF:-$GITHUB_REF_NAME}"
-          if [ "$branch" = "main" ]; then dir=ghulsuite; else
-            b=$(printf '%s' "$branch" | tr -c 'A-Za-z0-9._-' '-'); dir="ghulsuite/branches/$b"; fi
-          echo "dir=$dir" >> "$GITHUB_OUTPUT"
-
-      - name: Upload auf den eigenen Testserver (Ordner ghulsuite/download bzw. Branch-Ordner)
-        if: github.repository_owner == 'ghulaschsuppe' && (github.event_name != 'pull_request' || (github.event.pull_request.head.repo.full_name == github.repository && github.head_ref != 'main' && github.head_ref != 'dev'))
-        uses: ./.github/actions/ftps-upload
-        with:
-          server: ${{ secrets.FTP_SERVER }}
-          user: ${{ secrets.FTP_USER }}
-          password: ${{ secrets.FTP_PASSWORD }}
-          local-dir: ./dist/
-          remote-dir: ${{ steps.dest.outputs.dir }}/download/
 
   # The Android app in the emulator for every pull request and for main, with the APK of this
   # run and a screenshot after every step (emulator.yml). Monkey and the intent attacks run in the
@@ -474,7 +484,7 @@ jobs:
   # changed, or a push run next to an open pull request).
   build-check:
     name: ${{ (github.event_name == 'push' && github.ref_name != 'main' && github.ref_name != 'dev') && 'build (Push)' || 'build' }}
-    needs: [changes, build]
+    needs: [changes, build, secrets-check]
     if: ${{ !cancelled() }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -483,13 +493,15 @@ jobs:
       - env:
           CHANGES: ${{ needs.changes.result }}
           RESULT: ${{ needs.build.result }}
+          SECRETS: ${{ needs.secrets-check.result }}
         run: |
           echo "Geänderte Bereiche: $CHANGES · Android-App bauen und testen: $RESULT"
-          [ "$CHANGES" = success ] && { [ "$RESULT" = success ] || [ "$RESULT" = skipped ]; }
+          [ "$SECRETS" = success ] || echo "::error::Secrets auf Repository-Ebene (siehe Job secrets-check)."
+          [ "$SECRETS" = success ] && [ "$CHANGES" = success ] && { [ "$RESULT" = success ] || [ "$RESULT" = skipped ]; }
 
   windows-check:
     name: ${{ (github.event_name == 'push' && github.ref_name != 'main' && github.ref_name != 'dev') && 'Windows-App (Push)' || 'Windows-App (Installer und portable Version)' }}
-    needs: [changes, windows]
+    needs: [changes, windows, secrets-check]
     if: ${{ !cancelled() }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -498,6 +510,8 @@ jobs:
       - env:
           CHANGES: ${{ needs.changes.result }}
           RESULT: ${{ needs.windows.result }}
+          SECRETS: ${{ needs.secrets-check.result }}
         run: |
           echo "Geänderte Bereiche: $CHANGES · Windows-App bauen: $RESULT"
-          [ "$CHANGES" = success ] && { [ "$RESULT" = success ] || [ "$RESULT" = skipped ]; }
+          [ "$SECRETS" = success ] || echo "::error::Secrets auf Repository-Ebene (siehe Job secrets-check)."
+          [ "$SECRETS" = success ] && [ "$CHANGES" = success ] && { [ "$RESULT" = success ] || [ "$RESULT" = skipped ]; }

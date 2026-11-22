@@ -54,7 +54,9 @@ class DocsBackendTest {
             created: Boolean,
             write: (java.io.OutputStream) -> Unit,
             check: (SuiteInput) -> Boolean,
-        ): Boolean = SuiteFiles.writeReplacing(File(ref.id), write, check)
+            wipeOld: Boolean,
+            onWipe: () -> Unit,
+        ): Boolean = SuiteFiles.writeReplacing(File(ref.id), write, check, wipeOld, onWipe)
         override val settings = Settings(object : KeyValueStore {
             private val map = mutableMapOf<String, Any>()
             override fun getInt(key: String, default: Int) = map[key] as? Int ?: default
@@ -74,15 +76,15 @@ class DocsBackendTest {
         }
         override fun biometricAvailable() = false
         override fun quickUnlockReady() = de.danerd.ghulsuite.model.QuickUnlockReady(false, false)
-        override suspend fun enableBiometricUnlock(password: String) {}
-        override suspend fun enablePinUnlock(password: String, pin: String) {}
+        override suspend fun enableBiometricUnlock(proof: de.danerd.ghulsuite.model.FactorProofUi, hours: Int, onTouchNeeded: () -> Unit) {}
+        override suspend fun enablePinUnlock(proof: de.danerd.ghulsuite.model.FactorProofUi, pin: String, hours: Int, onTouchNeeded: () -> Unit) {}
         override fun disableQuickUnlock() {}
         override fun disableQuickUnlockMethod(bio: Boolean) {}
         override suspend fun unlockWithBiometric() {}
         override suspend fun unlockWithPin(pin: String) {}
     }
 
-    private val password = "Master Passwort!"
+    private val password = "Gruener Kaktus singt 1987!"
 
     private fun device(dir: File, kf: ByteArray): Backend {
         GhulSuite(localStorage(File(dir, "suite").path), File(dir, "local").path).create(

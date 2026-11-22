@@ -106,14 +106,61 @@ class ScreenshotTest {
             if (saveOk) unsavedChanges = false
             return saveOk
         }
-        override suspend fun deleteSuite() {
-            // As the real backend: locked first, then the files go.
+        /** The next deletion fails with this (a key's second touch broke off), after locking. */
+        var deleteFailsOnce: de.danerd.ghulsuite.model.VaultException? = null
+        /** The recovery code of this suite (deleting or replacing with it, H5). */
+        var recoveryCode = "AAAAA-BBBBB-CCCCC-DDDDD-EEEEE-FFFFF-GGGGG-HHHHH-JJJJJ-KKKKK-MMMMM"
+        /** As the core: the proof of the suite here, both factors (the master password counts here) or its code. */
+        private fun checkExisting(proof: de.danerd.ghulsuite.model.FactorProofUi?, code: String?) {
+            if (code != null) {
+                if (code.filter { it.isLetterOrDigit() }.uppercase() != recoveryCode.filter { it.isLetterOrDigit() }) {
+                    throw de.danerd.ghulsuite.model.VaultException(de.danerd.ghulsuite.model.VaultErrorKind.INVALID_RECOVERY_CODE)
+                }
+            } else if (proof?.pin?.isEmpty() == true) {
+                // As a key: an empty PIN is a wrong one (and costs one of its tries).
+                throw de.danerd.ghulsuite.model.VaultException(de.danerd.ghulsuite.model.VaultErrorKind.PIN_INVALID, "", 7)
+            } else if (proof == null || proof.password != masterPassword) {
+                throw de.danerd.ghulsuite.model.VaultException(de.danerd.ghulsuite.model.VaultErrorKind.WRONG_PASSWORD)
+            } else if (proof.pin == null && proof.keyfile == null && !recovered) {
+                throw de.danerd.ghulsuite.model.VaultException(de.danerd.ghulsuite.model.VaultErrorKind.INVALID_INPUT, "a security key or key file is required")
+            }
+        }
+        override suspend fun deleteSuite(proof: de.danerd.ghulsuite.model.FactorProofUi?, code: String?, onTouchNeeded: () -> Unit) {
+            // As the real backend: locked first, then the proof, then the files go.
             kotlinx.coroutines.delay(30)
             unlocked.value = false
+            deleteFailsOnce?.let { deleteFailsOnce = null; throw it }
+            checkExisting(proof, code)
             calls += "deleteSuite"
             existsNow = false
         }
+        override suspend fun archiveAcceptReplacing(proof: de.danerd.ghulsuite.model.FactorProofUi?, code: String?, onTouchNeeded: () -> Unit) {
+            kotlinx.coroutines.delay(30)
+            checkExisting(proof, code)
+            calls += "archiveAcceptReplacing:" + (if (code != null) "code" else "proof")
+        }
+        /** Opened with the recovery code (H3): a change of the protection takes the password alone. */
+        var recovered = false
+        override fun openedWithRecoveryCode() = recovered
+        /** The proofs quick unlock was set up with, and its validity (H6). */
+        val quickSetups = java.util.Collections.synchronizedList(mutableListOf<String>())
         override fun protection() = protection
+        override suspend fun totpUri(vaultId: String, id: String, password: String): String {
+            kotlinx.coroutines.delay(30)
+            if (password != masterPassword) throw de.danerd.ghulsuite.model.VaultException(de.danerd.ghulsuite.model.VaultErrorKind.WRONG_PASSWORD)
+            calls += "totpUri:$id"
+            return "otpauth://totp/Codeberg:ghul?secret=JBSWY3DPEHPK3PXP&issuer=Codeberg"
+        }
+        /** How saving replaces the file at a place (M1). */
+        var safe = de.danerd.ghulsuite.model.SafeSaveUi.SAFE
+        override fun safeSave(ref: de.danerd.ghulsuite.model.SuiteFileRef) = safe
+        /** The master password [verifyPassword] accepts (as the core: it takes a moment). */
+        var masterPassword = "Sicheres-Passwort-1"
+        override suspend fun verifyPassword(password: String): Boolean {
+            kotlinx.coroutines.delay(30)
+            calls += "verifyPassword"
+            return password == masterPassword
+        }
         override suspend fun inspectFile(data: ByteArray) = ContainerInfoUi("pass", protection)
         override suspend fun calibrateKdf() = KdfChoice(256 * 1024, 3, 800)
         override suspend fun keyInfo() = KeyStatus("Yubico Security Key", true, true, 4)
@@ -168,18 +215,43 @@ class ScreenshotTest {
         override suspend fun shareAsVault(
             share: de.danerd.ghulsuite.model.ShareVaultUi, pin: String?, onTouchNeeded: () -> Unit,
         ): de.danerd.ghulsuite.model.SharedVaultUi {
-            calls += "shareAsVault:${share.vaultId}:${share.ids.joinToString(",")}:${share.name}:${share.keyfile != null}:${share.masterPassword}"
+            calls += "shareAsVault:${share.vaultId}:${share.ids.joinToString(",")}:${share.name}:${share.keyfile != null}:${share.proof.password}"
             return de.danerd.ghulsuite.model.SharedVaultUi(VaultKindUi.PASS, ByteArray(10), "AAAAA-BBBBB-CCCCC-DDDDD-EEEEE-FFFFF-GGGGG-HHHHH-JJJJJ-KKKKK-MMMMM")
         }
         override fun panicLock() {}
         override fun biometricAvailable() = true
-        override fun quickUnlockReady() = QuickUnlockReady(biometric = quickReady, pin = quickReady)
-        override suspend fun enableBiometricUnlock(password: String) {}
-        override suspend fun enablePinUnlock(password: String, pin: String) {}
+        /** Quick unlock of an older version, to set up again. */
+        var quickNeedsSetup = false
+        /** What unlocking with the app PIN answers (null: it opens). */
+        var quickError: de.danerd.ghulsuite.model.VaultException? = null
+        override fun quickUnlockReady() = QuickUnlockReady(biometric = quickReady, pin = quickReady, needsSetup = quickNeedsSetup)
+        override suspend fun enableBiometricUnlock(proof: de.danerd.ghulsuite.model.FactorProofUi, hours: Int, onTouchNeeded: () -> Unit) {
+            kotlinx.coroutines.delay(30)
+            checkExisting(proof, null)
+            quickSetups += "bio:$hours:${proof.pin}:${proof.keyfile != null}"
+            settings.quickUnlockHours = hours
+            settings.quickHoursBio = hours
+            settings.quickUnlockBiometric = true
+        }
+        override suspend fun enablePinUnlock(proof: de.danerd.ghulsuite.model.FactorProofUi, pin: String, hours: Int, onTouchNeeded: () -> Unit) {
+            kotlinx.coroutines.delay(30)
+            checkExisting(proof, null)
+            quickSetups += "pin:$pin:$hours"
+            settings.quickUnlockHours = hours
+            settings.quickHoursPin = hours
+            settings.quickUnlockPin = true
+        }
         override fun disableQuickUnlock() {}
         override fun disableQuickUnlockMethod(bio: Boolean) {}
         override suspend fun unlockWithBiometric() {}
-        override suspend fun unlockWithPin(pin: String) {}
+        override suspend fun unlockWithPin(pin: String) {
+            kotlinx.coroutines.delay(30)
+            quickError?.let { e ->
+                // As the platform: an outdated one is no longer ready, the setting stays.
+                if (e.kind == de.danerd.ghulsuite.model.VaultErrorKind.QUICK_OUTDATED) { quickReady = false; quickNeedsSetup = true }
+                throw e
+            }
+        }
         override val cal: de.danerd.ghulsuite.model.CalBackend = FakeCal()
         override val docs = FakeDocs()
         /** What [archiveInspect] says about a picked `.ghlzip` or `.ghldocs` (null: none). */
@@ -238,7 +310,10 @@ class ScreenshotTest {
         override suspend fun deleteEntry(vaultId: String, id: String) { calls += "deleteEntry:$vaultId:$id" }
         /** The security check; nothing checked by default, so the list shows no security card. */
         var report = de.danerd.ghulsuite.model.SecurityReportUi(100, 0, emptyList())
-        override suspend fun securityReport() = report
+        override suspend fun securityReport(): de.danerd.ghulsuite.model.SecurityReportUi {
+            calls += "securityReport"
+            return report
+        }
         override suspend fun totpCodes(nowSeconds: Long) = listOf(
             TotpCodeUi("t1", "Persönlich", "a", "Codeberg", "ghul", "492039", "118273", 30, 17),
             TotpCodeUi("t1", "Persönlich", "b", "GitHub", "ghulaschsuppe", "771204", "009812", 30, 4),
@@ -264,7 +339,7 @@ class ScreenshotTest {
         override suspend fun importData(
             data: ByteArray, fileName: String, passVault: String?, totpVault: String?, totpsFromLogins: Boolean, keep: KeepSkippedUi?,
         ) = ImportResultUi(42, 5, 0, 1)
-        override suspend fun exportPlain(vaultId: String, password: String) = ByteArray(0)
+        override suspend fun exportPlain(vaultId: String, password: String, spreadsheetSafe: Boolean) = ByteArray(0)
         override fun printEmergencySheet(code: String, text: EmergencySheetText) {}
         override val appVersion = "0.5.0-dev"
         override val coreVersion = "ghul-core 0.5.0 (RP-ID ghulsuite.invalid)"

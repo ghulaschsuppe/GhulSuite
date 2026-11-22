@@ -295,6 +295,8 @@ fun SecretTextField(
     modifier: Modifier = Modifier.fillMaxWidth(),
     numeric: Boolean = false,
     trailing: @Composable (() -> Unit)? = null,
+    /** Asked before the value is shown (M13: a stored 2FA key); it gets "show" to call when allowed. */
+    onReveal: ((show: () -> Unit) -> Unit)? = null,
 ) {
     var visible by remember { mutableStateOf(false) }
     val (digit, symbol) = passwordColors()
@@ -312,7 +314,7 @@ fun SecretTextField(
         trailingIcon = {
             Row {
                 trailing?.invoke()
-                IconButton(onClick = { visible = !visible }) {
+                IconButton(onClick = { if (!visible && onReveal != null) onReveal { visible = true } else visible = !visible }) {
                     Icon(
                         if (visible) Icons.Filled.VisibilityOff else Icons.Filled.Visibility,
                         contentDescription = stringResource(if (visible) Res.string.a_hide else Res.string.a_show),

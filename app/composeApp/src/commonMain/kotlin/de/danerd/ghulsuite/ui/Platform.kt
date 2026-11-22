@@ -14,6 +14,14 @@ expect fun PlatformBackHandler(enabled: Boolean, onBack: () -> Unit)
  */
 expect fun androidx.compose.ui.Modifier.testTagsAsIds(): androidx.compose.ui.Modifier
 
+/**
+ * M17: protects the window it is composed in (a dialog or a sheet is a window of its own): no
+ * taps while another app draws over it (tapjacking), and on Android 14+ hidden from accessibility
+ * services that are not tools for people who need them. Nothing on Windows.
+ */
+@Composable
+expect fun GuardWindow()
+
 /** Current Unix time in seconds. */
 expect fun nowSeconds(): Long
 
@@ -39,10 +47,11 @@ expect fun rememberOpenFile(onPicked: (de.danerd.ghulsuite.model.PickedFile) -> 
 
 /**
  * Returns a launcher that asks the user where to save a file (suggested name, content);
- * [onSaved] receives whether the file was written.
+ * [onSaved] receives how it ended: saved, cancelled, or chosen but not written (M8: a failed
+ * write says so, see [reportSaveFile]).
  */
 @Composable
-expect fun rememberSaveFile(onSaved: (Boolean) -> Unit): (String, ByteArray) -> Unit
+expect fun rememberSaveFile(onSaved: (SaveFileResult) -> Unit): (String, ByteArray) -> Unit
 
 /**
  * Returns a launcher that picks a suite file (`.ghlzip`), a GhulDocs package (`.ghldocs`) or a vault file to open. Nothing is read
@@ -81,10 +90,11 @@ expect fun rememberOpenStreams(onPicked: (List<de.danerd.ghulsuite.model.ByteSou
 
 /**
  * Returns a launcher that asks the user where to save a file (suggested name and MIME type);
- * [onCreated] receives a stream to write to, or null if cancelled.
+ * [onCreated] receives a stream to write to, or null if cancelled. A place chosen that cannot be
+ * opened for writing calls [onFailed] first (then [onCreated] with null).
  */
 @Composable
-expect fun rememberCreateStream(onCreated: (de.danerd.ghulsuite.model.ByteSink?) -> Unit): (String, String) -> Unit
+expect fun rememberCreateStream(onFailed: () -> Unit = {}, onCreated: (de.danerd.ghulsuite.model.ByteSink?) -> Unit): (String, String) -> Unit
 
 /** QR code modules for [text] (rows of dark/light), via ZXing on both platforms. */
 expect fun qrModules(text: String): List<BooleanArray>

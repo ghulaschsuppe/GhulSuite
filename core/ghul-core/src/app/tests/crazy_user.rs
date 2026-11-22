@@ -289,7 +289,7 @@ fn run(seed: u64, steps: usize) -> Stats {
                 );
             }
             22 => {
-                st.note("export wrong password", s.export_plain(pass.clone(), "falsch".into()));
+                st.note("export wrong password", s.export_plain(pass.clone(), "falsch".into(), false));
                 st.note(
                     "confirm code garbage",
                     s.confirm_recovery_code(rng.next() as u32, rng.pick(SILLY).unwrap().to_string()),

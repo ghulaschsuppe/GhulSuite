@@ -24,7 +24,7 @@ impl From<uniffi::UnexpectedUniFFICallbackError> for StorageError {
 impl From<StorageError> for GhulError {
     fn from(e: StorageError) -> Self {
         match e {
-            StorageError::Io { msg } => GhulError::Storage { msg },
+            StorageError::Io { msg } => super::error::storage_message(msg),
         }
     }
 }
@@ -45,25 +45,39 @@ pub trait VaultStorage: Send + Sync {
     fn content_dir(&self) -> Option<String>;
 }
 
-/// Writes atomically: temporary file, fsync, keep the previous version as `.bak` (a hard link or
-/// a copy), rename over the old file. The name always holds a whole file: the old one or the new.
+/// Writes atomically: temporary file, fsync, rename over the old file. The name always holds a
+/// whole file: the old one or the new. The previous version is kept as `.bak` (a hard link or a
+/// copy) where that works; it is only read back for the device's notes (`archive-seen.json`),
+/// never for a container, so it is best effort: a full storage or a file system without hard
+/// links never makes the write fail for it. If the rename fails, the `.bak` (possibly a hard link
+/// to the file still in place) and the `.tmp` go again.
 pub(crate) fn write_atomic(dir: &Path, name: &str, data: &[u8]) -> Result<()> {
     let tmp = dir.join(format!("{name}.tmp"));
     let target = dir.join(name);
-    {
+    let written = (|| -> std::io::Result<()> {
         let mut f = fs::File::create(&tmp)?;
         f.write_all(data)?;
-        f.sync_all()?;
+        f.sync_all()
+    })();
+    if let Err(e) = written {
+        let _ = fs::remove_file(&tmp);
+        return Err(e.into());
     }
+    let bak = dir.join(format!("{name}.bak"));
     if target.exists() {
-        let bak = dir.join(format!("{name}.bak"));
         let _ = fs::remove_file(&bak);
         if fs::hard_link(&target, &bak).is_err() {
-            fs::copy(&target, &bak)?;
+            let _ = fs::copy(&target, &bak);
         }
     }
     // Replaces the old file in one step (also on Windows).
-    fs::rename(&tmp, &target)?;
+    if let Err(e) = fs::rename(&tmp, &target) {
+        // The `.bak` would be a second name of the file still in place (a hard link): it goes,
+        // so that nothing later treats the live file as an old copy.
+        let _ = fs::remove_file(&bak);
+        let _ = fs::remove_file(&tmp);
+        return Err(e.into());
+    }
     if let Ok(d) = fs::File::open(dir) {
         let _ = d.sync_all();
     }

@@ -141,6 +141,14 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
     suspend fun str(res: org.jetbrains.compose.resources.StringResource, vararg args: Any): String =
         env()?.let { getString(it, res, *args) } ?: getString(res, *args)
 
+    /** [str] and [plural] for code outside of the app state (reminders). */
+    val texts: Texts = object : Texts {
+        // Without arguments the text stays as it is (a template like "%1$s, %2$s" for the calendar).
+        override suspend fun s(res: org.jetbrains.compose.resources.StringResource, vararg args: Any) =
+            if (args.isEmpty()) env()?.let { getString(it, res) } ?: getString(res) else str(res, *args)
+        override suspend fun p(res: org.jetbrains.compose.resources.PluralStringResource, count: Int, vararg args: Any) = plural(res, count, *args)
+    }
+
     /** A counted text ("1 file", "3 files") in the language of the screens. */
     suspend fun plural(res: org.jetbrains.compose.resources.PluralStringResource, count: Int, vararg args: Any): String =
         env()?.let { getPluralString(it, res, count, *args) } ?: getPluralString(res, count, *args)
@@ -258,9 +266,9 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
         scope.launch {
             val now = localNow()
             val start = fromAbsMinutes(absMinutes(now) + 15)
-            val r = de.danerd.ghulsuite.model.CalReminderUi("", title, getString(Res.string.cal_test_place), false, start,
+            val r = de.danerd.ghulsuite.model.CalReminderUi("", title, str(Res.string.cal_test_place), false, start,
                 fromAbsMinutes(absMinutes(start) + 45), now, 15)
-            backend.cal.showReminder(calAlarm(r, st.calNotifyDetail, loadCalNames()), st.calSound)
+            backend.cal.showReminder(calAlarm(r, st.calNotifyDetail, loadCalNames(texts), texts), st.calSound)
         }
     }
 
@@ -287,13 +295,15 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
         }
         scope.launch {
             calendars = catching { backend.cal.calendars() }.getOrDefault(emptyList())
-            val lang = getString(Res.string.cal_lang)
+            val lang = str(Res.string.cal_lang)
             calRegionName = catching { backend.cal.regions(lang) }.getOrDefault(emptyList()).firstOrNull { it.code == st.calRegion }?.name ?: ""
             // A calendar opened on its own does not replace the reminders of the own suite.
             if (alone) return@launch
-            val rem = catching { backend.cal.reminders(localNow(), 30) }.getOrDefault(emptyList())
-            val names = loadCalNames()
-            backend.cal.scheduleReminders(rem.take(400).map { calAlarm(it, st.calNotifyDetail, names) }, st.calSound)
+            // M9: reading failed (a damaged calendar, the core busy): the reminders already set
+            // stay as they are, instead of being replaced by an empty list.
+            val rem = catching { backend.cal.reminders(localNow(), 30) }.getOrElse { return@launch }
+            val names = loadCalNames(texts)
+            backend.cal.scheduleReminders(rem.take(400).map { calAlarm(it, st.calNotifyDetail, names, texts) }, st.calSound)
         }
     }
 
@@ -315,10 +325,87 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
     /** U11: opened with the recovery code: the next steps are shown once (see [RecoveredDialog]). */
     var recoveredGuide by mutableStateOf(false)
 
+    /** H4: an archive waits for "open anyway" before it goes to another app. */
+    var archiveAsk by mutableStateOf<de.danerd.ghulsuite.model.DocsItemUi?>(null)
+
+    /** Opened with the recovery code (until the lock): a banner says what to do before locking (H3). */
+    var recoveredOpen by mutableStateOf(false)
+
     /** A newer version was found: the update dialog shows it. */
     var update by mutableStateOf<UpdateUi?>(null)
     /** Looking for or loading an update. */
     var updateBusy by mutableStateOf(false)
+    /** M7: an update is loaded for installing (the installer ends the app): saving waits. */
+    var updateInstalling by mutableStateOf(false)
+        private set
+
+    /** Nothing would be lost if the app ended now: no save, no other job, no unsaved input. */
+    private fun mayEndForUpdate(): Boolean = saveJob == null && !jobs.running && !editorDirty
+
+    /**
+     * M2: the suite file at the remembered place was saved elsewhere since this device's state
+     * (another device, another stick): who saved it and when. Shown as a question before the user
+     * edits; null when there is nothing to say.
+     */
+    var newerSuiteFile by mutableStateOf<de.danerd.ghulsuite.model.ArchiveTargetInfoUi?>(null)
+
+    /** Files whose newer state was answered with "Later" (until the app starts anew), by their head. */
+    private val newerLater = mutableSetOf<String>()
+
+    private fun newerKey(ref: de.danerd.ghulsuite.model.SuiteFileRef, info: de.danerd.ghulsuite.model.ArchiveTargetInfoUi) =
+        "${ref.id}|${info.target}|${info.device}|${info.time}"
+
+    /** "Later": not asked again for this state of the file until the app starts anew. */
+    fun newerLater() {
+        val info = newerSuiteFile ?: return
+        backend.suiteFile()?.let { newerLater += newerKey(it, info) }
+        newerSuiteFile = null
+    }
+
+    /** M2: reads the header of the remembered suite file in the background after unlocking. */
+    fun checkNewerSuiteFile() {
+        val ref = backend.suiteFile() ?: return
+        scope.launch {
+            val info = catching { backend.archiveTargetInfo(ref) }.getOrNull() ?: return@launch
+            // Locked meanwhile, or another file opened: the answer no longer fits.
+            // CHANGED_ELSEWHERE: saved from another state; OTHER_PROTECTION: saved with a protection
+            // this device does not know yet (the other device changed it), surely newer.
+            val elsewhere = info.target == de.danerd.ghulsuite.model.ArchiveTargetUi.CHANGED_ELSEWHERE ||
+                info.target == de.danerd.ghulsuite.model.ArchiveTargetUi.OTHER_PROTECTION
+            if (elsewhere && newerKey(ref, info) !in newerLater && backend.unlocked.value &&
+                backend.suiteFile() == ref && single == null
+            ) {
+                newerSuiteFile = info
+            }
+        }
+    }
+
+    /** "Open it now": the page of the suite file opens it, with password and second factor (M2). */
+    fun openNewerSuiteFile() {
+        newerSuiteFile = null
+        val ref = backend.suiteFile() ?: return
+        AppLaunch.suiteFile.value = PickedSuiteFile(ref)
+    }
+
+    /** M24: an update of an earlier run that failed to install says so once. */
+    fun reportFailedUpdate() {
+        val code = catching { backend.updater.takeFailedInstall() }.getOrNull() ?: return
+        scope.launch {
+            catching {
+                message(
+                    when (code) {
+                        // The user cancelled the installer.
+                        "1602" -> getString(Res.string.upd_install_cancelled)
+                        "hash" -> getString(Res.string.upd_install_hash)
+                        "error" -> getString(Res.string.upd_install_check_failed)
+                        // The script never ran (see DesktopUpdater): stopped before it started.
+                        "pending" -> getString(Res.string.upd_install_blocked)
+                        else -> getString(Res.string.upd_install_failed, code)
+                    },
+                )
+            }
+        }
+    }
 
     /**
      * Looks for a newer version on the chosen channel. Automatically at most once a day after
@@ -353,19 +440,28 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
         if (updateBusy) return
         // Installing ends the app: not while the suite file is saved, files are added or an
         // entry is edited (that would be lost). The working copy itself is safe.
-        if (saveJob != null || jobs.running || editorDirty) {
+        if (!mayEndForUpdate()) {
             scope.launch { catching { message(getString(Res.string.upd_wait)) } }
             return
         }
         update = null
         updateBusy = true
+        updateInstalling = true
         // The note must not hold up the installation.
         scope.launch { catching { message(getString(Res.string.upd_loading)) } }
         scope.launch {
             try {
-                if (backend.updater.install(u) == UpdateStep.ALLOW_FIRST) {
-                    update = u
-                    message(getString(Res.string.upd_allow))
+                // Asked again right before the app ends (M7): the download took a while.
+                when (backend.updater.install(u) { mayEndForUpdate() }) {
+                    UpdateStep.ALLOW_FIRST -> {
+                        update = u
+                        message(getString(Res.string.upd_allow))
+                    }
+                    UpdateStep.WAIT -> {
+                        update = u
+                        message(getString(Res.string.upd_wait))
+                    }
+                    UpdateStep.STARTED -> {}
                 }
             } catch (e: CancellationException) {
                 throw e
@@ -373,6 +469,7 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
                 message(describe(e))
             } finally {
                 updateBusy = false
+                updateInstalling = false
             }
         }
     }
@@ -425,6 +522,17 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
     /** The time (ms since 1970); tests may replace it. */
     var clockMs: () -> Long by mutableStateOf({ nowSeconds() * 1000 })
 
+    /**
+     * M32: a password or 2FA account was added or changed since the last save: the reminder above
+     * the lists shows at once (not only after days). Gone with the next save.
+     */
+    var savePrompt by mutableStateOf(false)
+
+    /** After a new or changed password or 2FA account (see [savePrompt]). */
+    fun promptSave() {
+        if (single == null) savePrompt = true
+    }
+
     /** Unsaved for [REMIND_UNSAVED_MS] or longer: a reminder above the lists. */
     val saveOverdue: Boolean
         get() = saveNeeded && unsavedSince > 0 && clockMs() - unsavedSince >= REMIND_UNSAVED_MS
@@ -438,6 +546,7 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
     fun readUnsaved() {
         unsaved = backend.archiveUnsaved()
         unsavedSince = if (unsaved) backend.archiveUnsavedSince() else 0L
+        if (!unsaved) savePrompt = false
     }
 
     /** Windows: the window is to close while changes are not in the suite file (see [QuitDialog]). */
@@ -477,6 +586,7 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
         }
 
     init {
+        PasswordPolicy.apply(backend.securityRules())
         scope.launch {
             backend.unlocked.collect { unlocked ->
                 if (!unlocked) {
@@ -485,6 +595,7 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
                     jobs.lockWhenDone = false
                     if (editorDirty) discardedOnLock = true
                     editorDirty = false
+                    newerSuiteFile = null
                     // What is unsaved is read anew (the suite may be gone); the save dialog closes
                     // (a save that runs goes on, its job says how it ended).
                     saveDialog = null
@@ -495,6 +606,7 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
                     }
                     readUnsaved()
                     recoveredGuide = false
+                    recoveredOpen = false
                     // Sheets of the screens before do not come back after unlocking (maybe in another suite).
                     calQuickOpen = false
                     contextSheet = false
@@ -545,8 +657,11 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
                     val start = if (st.startTab < 0) tabs.firstOrNull { it.name == st.lastTabName } else tabs.getOrNull(st.startTab)
                     start?.let { tab = it }
                     applyLaunch()
+                    recoveredOpen = catching { backend.openedWithRecoveryCode() }.getOrDefault(false)
                     refreshCalendar()
                     checkUpdate(manual = false)
+                    reportFailedUpdate()
+                    checkNewerSuiteFile()
                 }
             }
         }
@@ -686,12 +801,16 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
     /** Opens the print dialog for the emergency sheet of [code]. */
     fun printSheet(code: String) {
         scope.launch {
+            // M31: enough for someone else (an heir): where to get the app, what else is needed.
+            // In the wizard there is no file yet (step 8 comes after the sheet): the suggested name, said as such.
+            val file = backend.suiteFile()?.name ?: getString(Res.string.sheet_default_name, SUITE_FILE_NAME)
             val text = de.danerd.ghulsuite.model.EmergencySheetText(
                 title = getString(Res.string.sheet_title),
-                intro = getString(Res.string.sheet_intro),
+                intro = getString(Res.string.sheet_intro, file),
                 codeLabel = getString(Res.string.sheet_code_label),
                 created = getString(Res.string.sheet_created, formatDate(nowSeconds() * 1000)),
                 steps = listOf(
+                    getString(Res.string.sheet_need, file),
                     getString(Res.string.sheet_step1),
                     getString(Res.string.sheet_step2),
                     getString(Res.string.sheet_step3),
@@ -982,6 +1101,10 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
             } catch (e: Exception) {
                 failure = describe(e)
                 null
+            } catch (e: OutOfMemoryError) {
+                // M6 (r5-g3): a file too large for this device's memory ends the action, not the app.
+                failure = catching { getString(Res.string.err_out_of_memory) }.getOrDefault("Out of memory")
+                null
             } finally {
                 busy = false
                 touchNeeded = false
@@ -1053,6 +1176,8 @@ private suspend fun describeText(e: Throwable): String {
         VaultErrorKind.PIN_POLICY -> getString(Res.string.err_pin_policy)
         VaultErrorKind.QUICK_UNAVAILABLE -> getString(Res.string.err_quick_unavailable)
         VaultErrorKind.QUICK_EXPIRED -> getString(Res.string.err_quick_expired)
+        VaultErrorKind.QUICK_OUTDATED -> getString(Res.string.err_quick_outdated)
+        VaultErrorKind.DELETE_INCOMPLETE -> getString(Res.string.err_delete_incomplete)
         VaultErrorKind.QUICK_INVALID -> getPluralString(Res.plurals.err_quick_invalid, e.retries ?: 0, (e.retries ?: 0).toString())
         VaultErrorKind.BIOMETRIC_CANCELLED -> getString(Res.string.err_bio_cancelled)
         VaultErrorKind.BIOMETRIC_LOCKOUT -> getString(Res.string.err_bio_lockout)
@@ -1087,14 +1212,31 @@ private suspend fun describeText(e: Throwable): String {
         VaultErrorKind.NOT_CONFIGURED -> getString(Res.string.err_not_configured)
         VaultErrorKind.NOT_FOUND -> getString(Res.string.err_not_found)
         VaultErrorKind.DOCS_LIMIT -> docsLimitText(e.detail, DocsAdding.ANY) { res, args -> getString(res, *args) }
+        // H12: the core checks the room before it writes (needed 0: the system said "full" while writing).
+        VaultErrorKind.NO_SPACE -> {
+            val (free, needed) = e.detail.split('|').map { it.toLongOrNull() ?: 0L } + listOf(0L, 0L)
+            if (needed > 0) getString(Res.string.err_no_space, formatSize(needed), formatSize(free)) else getString(Res.string.err_no_space_unknown)
+        }
         VaultErrorKind.OTHER -> getString(Res.string.err_other, coreText(e.detail) ?: e.detail)
     }
 }
 
 /** Rules for the master password (always combined with a security key or key file). */
 object PasswordPolicy {
-    const val MIN_LENGTH = 10
-    const val MIN_SCORE = 3
+    // M42: the rules come from the core (security_rules), which checks them itself as well; set
+    // when the app state is made (these defaults are the core's values).
+    var MIN_LENGTH = 10
+        private set
+    var MIN_SCORE = 3
+        private set
+    var MIN_APP_PIN = 6
+        private set
+
+    fun apply(rules: de.danerd.ghulsuite.model.SecurityRulesUi) {
+        MIN_LENGTH = rules.passwordMinLength
+        MIN_SCORE = rules.passwordMinScore
+        MIN_APP_PIN = rules.appPinMinLength
+    }
 
     /** Returns the error text or null if the password is acceptable. */
     suspend fun check(backend: VaultBackend, password: String, repeat: String): String? = when {
