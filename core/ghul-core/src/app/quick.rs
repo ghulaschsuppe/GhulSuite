@@ -67,12 +67,36 @@ pub const MIN_PIN_LEN: usize = 8;
 /// The message for an app PIN that is too short or not only digits (translated by the app).
 pub const PIN_RULE: &str = "the app PIN needs at least 8 digits";
 
-/// The app PIN: at least [`MIN_PIN_LEN`] digits, nothing else.
+/// The message for an app PIN that is easy to guess (translated by the app).
+pub const PIN_TOO_SIMPLE: &str = "the app PIN is too easy to guess: no repeated digits or blocks, no runs, no dates";
+
+/// The app PIN: at least [`MIN_PIN_LEN`] digits, nothing else, and none of the PINs tried first
+/// (r9 dieb M2: two attempts are enough for those): one digit or a short block repeated
+/// (`11111111`, `12121212`, `12341234`), a run up or down (`12345678`, `87654321`), and for
+/// eight digits a date of the years 1900 to 2099 as `DDMMYYYY`, `MMDDYYYY` or `YYYYMMDD`.
 pub fn check_pin(pin: &str) -> Result<()> {
     if pin.chars().count() < MIN_PIN_LEN || !pin.chars().all(|c| c.is_ascii_digit()) {
         return Err(GhulError::InvalidInput { msg: PIN_RULE.into() });
     }
+    if pin_too_simple(pin.as_bytes()) {
+        return Err(GhulError::InvalidInput { msg: PIN_TOO_SIMPLE.into() });
+    }
     Ok(())
+}
+
+fn pin_too_simple(d: &[u8]) -> bool {
+    let d: Vec<i16> = d.iter().map(|b| i16::from(b - b'0')).collect();
+    let repeated = (1..=4).any(|n| d.len() % n == 0 && d.chunks(n).all(|c| c == &d[..n]));
+    let run = [1, -1].iter().any(|step| d.windows(2).all(|w| w[1] - w[0] == *step));
+    let num = |r: std::ops::Range<usize>| d[r].iter().fold(0i32, |a, x| a * 10 + i32::from(*x));
+    let date = |day: i32, month: i32, year: i32| {
+        (1..=31).contains(&day) && (1..=12).contains(&month) && (1900..=2099).contains(&year)
+    };
+    let dated = d.len() == 8
+        && (date(num(0..2), num(2..4), num(4..8))
+            || date(num(2..4), num(0..2), num(4..8))
+            || date(num(6..8), num(4..6), num(0..4)));
+    repeated || run || dated
 }
 
 pub fn path(dir: &Path, name: &str) -> Result<PathBuf> {

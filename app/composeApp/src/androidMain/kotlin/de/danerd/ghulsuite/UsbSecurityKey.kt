@@ -55,12 +55,9 @@ class UsbSecurityKeys(private val context: Context) {
                 }
             }
             val filter = IntentFilter(action)
-            if (Build.VERSION.SDK_INT >= 33) {
-                context.registerReceiver(receiver, filter, Context.RECEIVER_NOT_EXPORTED)
-            } else {
-                @Suppress("UnspecifiedRegisterReceiverFlag")
-                context.registerReceiver(receiver, filter)
-            }
+            // r9 N-1: not open to other apps on Android 12/12L either (AndroidX guards it there
+            // with a signature permission of its own; from 13 on the system flag does it).
+            androidx.core.content.ContextCompat.registerReceiver(context, receiver, filter, androidx.core.content.ContextCompat.RECEIVER_NOT_EXPORTED)
             cont.invokeOnCancellation { runCatching { context.unregisterReceiver(receiver) } }
             val intent = Intent(action).setPackage(context.packageName)
             val pending = PendingIntent.getBroadcast(

@@ -79,14 +79,27 @@ name: Setup
     visible: "Your recovery code"
     timeout: 90000
 - takeScreenshot: 01-recovery-code
+# r9: the whole code is typed back (rows of three groups, the last row has two).
 - copyTextFrom:
     text: "[A-Z0-9]{5}\\s+[A-Z0-9]{5}\\s+[A-Z0-9]{5}"
     index: 0
-- evalScript: ${output.group3 = maestro.copiedText.trim().split(/\s+/)[2]}
+- evalScript: ${output.code = maestro.copiedText.trim()}
+- copyTextFrom:
+    text: "[A-Z0-9]{5}\\s+[A-Z0-9]{5}\\s+[A-Z0-9]{5}"
+    index: 1
+- evalScript: ${output.code = output.code + " " + maestro.copiedText.trim()}
+- copyTextFrom:
+    text: "[A-Z0-9]{5}\\s+[A-Z0-9]{5}\\s+[A-Z0-9]{5}"
+    index: 2
+- evalScript: ${output.code = output.code + " " + maestro.copiedText.trim()}
+- copyTextFrom:
+    text: "[A-Z0-9]{5}\\s+[A-Z0-9]{5}"
+    index: 0
+- evalScript: ${output.code = output.code + " " + maestro.copiedText.trim()}
 - tapOn: "I have written down or printed the code"
 - tapOn: "Next"
-- tapOn: "Group 3 of the code"
-- inputText: ${output.group3}
+- tapOn: { id: "code-confirm" }
+- inputText: ${output.code}
 - hideKeyboard
 - tapOn: "Finish"
 # Step 8: the suite file, at a place chosen in the system dialog "Save to" (DocumentsUI).

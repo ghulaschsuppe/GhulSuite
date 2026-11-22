@@ -256,6 +256,12 @@ impl<'a> Authenticator<'a> {
         if !self.info.supports_hmac_secret() {
             return Err(FidoError::HmacSecretUnsupported);
         }
+        // r9 M1: a key of CTAP 2.0 has one hmac-secret value with and without the PIN; without
+        // credProtect it answers an assertion without the PIN, so the key's PIN would not guard
+        // the second factor. Such a key is refused (the same error: it lacks what is needed).
+        if !self.info.supports_cred_protect() && !self.info.versions.iter().any(|v| v == "FIDO_2_1") {
+            return Err(FidoError::HmacSecretUnsupported);
+        }
         let (proto, token) = self.pin_token(pin, PERMISSION_MAKE_CREDENTIAL, rp_id)?;
         let mut cdh = [0u8; 32];
         OsRng.fill_bytes(&mut cdh);
@@ -263,7 +269,8 @@ impl<'a> Authenticator<'a> {
         OsRng.fill_bytes(&mut user_id);
         let mut ext = vec![(Cbor::text("hmac-secret"), Cbor::Bool(true))];
         // credProtect 3 (userVerificationRequired): the key only uses the credential after PIN
-        // verification, so it cannot be probed without the PIN. Keys without the extension ignore it.
+        // verification, so it cannot be probed without the PIN. Only a key of CTAP 2.1 may lack
+        // it (its hmac-secret gives other values without the PIN).
         if self.info.supports_cred_protect() {
             ext.push((Cbor::text("credProtect"), Cbor::Int(CRED_PROTECT_UV_REQUIRED)));
         }

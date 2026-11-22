@@ -62,8 +62,21 @@ class AndroidQuickUnlock(
         val blob = prefs.getString("$name.blob", null) ?: return false
         if (blob.isEmpty() || prefs.getInt("$name.boot", -2) != bootCount()) return false
         // M30: run out; it waits for the next full unlock (which starts its time anew).
-        if (prefs.getBoolean("$name.expired", false)) return false
+        if (prefs.getBoolean("$name.expired", false) || runOutByUptime(name)) return false
         return keyStore.containsAlias(alias(name)) && suite().quickUnlockExists(name)
+    }
+
+    /**
+     * r9 dieb N1: the validity also by the time since boot, which a clock set back does not change
+     * (the core counts by the wall clock). Within one boot only; unknown (older data): no verdict.
+     */
+    private fun runOutByUptime(name: String): Boolean {
+        val since = prefs.getLong("$name.since", -1L).takeIf { it >= 0 && prefs.getInt("$name.boot", -2) == bootCount() } ?: return false
+        val hours = (if (name == BIO) settings.quickHoursBio else settings.quickHoursPin).takeIf { it >= 0 } ?: settings.quickUnlockHours
+        if (hours <= 0) return false
+        val over = android.os.SystemClock.elapsedRealtime() - since > hours * 3_600_000L
+        if (over) expired(name)
+        return over
     }
 
     /**
@@ -73,7 +86,7 @@ class AndroidQuickUnlock(
      */
     private fun usablePin(): Boolean {
         if (!settings.quickUnlockPin) return false
-        if (prefs.getInt("$PIN.boot", -2) != bootCount() || prefs.getBoolean("$PIN.expired", false)) return false
+        if (prefs.getInt("$PIN.boot", -2) != bootCount() || prefs.getBoolean("$PIN.expired", false) || runOutByUptime(PIN)) return false
         return try {
             pinSlots.left() > 0
         } catch (e: VaultException) {
@@ -118,7 +131,7 @@ class AndroidQuickUnlock(
     private fun outdated(name: String) {
         runCatching { if (keyStore.containsAlias(alias(name))) keyStore.deleteEntry(alias(name)) }
         if (name == PIN) pinSlots.tidy(null)
-        prefs.edit().remove("$name.blob").remove("$name.boot").remove("$name.fails").remove("$name.expired")
+        prefs.edit().remove("$name.blob").remove("$name.boot").remove("$name.fails").remove("$name.expired").remove("$name.since")
             .putBoolean("$name.outdated", true).apply()
     }
 
@@ -169,7 +182,9 @@ class AndroidQuickUnlock(
     private fun store(name: String, cipher: Cipher, qk: ByteArray) {
         val ct = cipher.doFinal(qk)
         val blob = Base64.encodeToString(cipher.iv + ct, Base64.NO_WRAP)
-        prefs.edit().putString("$name.blob", blob).putInt("$name.boot", bootCount()).putInt("$name.fails", 0).remove("$name.outdated").apply()
+        // r10 M4: its time starts now (as the core's created_ms), not at the full unlock before.
+        prefs.edit().putString("$name.blob", blob).putInt("$name.boot", bootCount()).putInt("$name.fails", 0).remove("$name.outdated")
+            .putLong("$name.since", android.os.SystemClock.elapsedRealtime()).apply()
         qk.fill(0)
     }
 
@@ -237,6 +252,7 @@ class AndroidQuickUnlock(
                 pinSlots.enable(suite().enablePinSlots(proof, pin, maxAgeSeconds(hours)))
             }
             prefs.edit().putInt("$PIN.boot", bootCount()).remove("$PIN.blob").remove("$PIN.fails").remove("$PIN.expired")
+                .putLong("$PIN.since", android.os.SystemClock.elapsedRealtime())
                 .remove("$PIN.outdated").commit()
             settings.quickUnlockHours = hours
             settings.quickHoursPin = hours
@@ -287,6 +303,7 @@ class AndroidQuickUnlock(
         for (name in listOf(BIO, PIN)) {
             if (prefs.contains("$name.blob") || (name == PIN && prefs.contains("$PIN.boot"))) edit.putInt("$name.boot", bootCount())
             edit.remove("$name.expired")
+            edit.putLong("$name.since", android.os.SystemClock.elapsedRealtime())
         }
         edit.apply()
     }
@@ -305,7 +322,8 @@ class AndroidQuickUnlock(
         runCatching { suite().quickUnlockDisable(name) }
         runCatching { if (keyStore.containsAlias(alias(name))) keyStore.deleteEntry(alias(name)) }
         if (name == PIN) pinSlots.tidy(null)
-        prefs.edit().remove("$name.blob").remove("$name.boot").remove("$name.fails").remove("$name.expired").remove("$name.outdated").apply()
+        prefs.edit().remove("$name.blob").remove("$name.boot").remove("$name.fails").remove("$name.expired").remove("$name.outdated")
+            .remove("$name.since").apply()
         when (name) {
             BIO -> settings.quickUnlockBiometric = false
             PIN -> settings.quickUnlockPin = false
@@ -370,17 +388,9 @@ class AndroidQuickUnlock(
     }
 }
 
-/** Maps core errors of the quick unlock functions. */
-private inline fun <T> mappedQuick(block: () -> T): T = try {
-    block()
-} catch (e: GhulException.QuickUnlockInvalid) {
-    throw VaultException(VaultErrorKind.QUICK_INVALID)
-} catch (e: GhulException.QuickUnlockExpired) {
-    throw VaultException(VaultErrorKind.QUICK_EXPIRED)
-} catch (e: GhulException.QuickUnlockOutdated) {
-    throw VaultException(VaultErrorKind.QUICK_OUTDATED)
-} catch (e: GhulException.QuickUnlockUnavailable) {
-    throw VaultException(VaultErrorKind.QUICK_UNAVAILABLE)
-} catch (e: GhulException) {
-    throw VaultException(VaultErrorKind.OTHER, e.message.orEmpty())
-}
+/**
+ * Maps core errors of the quick unlock functions. r13 M1: every other error keeps its own kind
+ * (storage, full storage, locked meanwhile), so it does not count as "something is wrong with
+ * the quick unlock" (which would switch it off), see QUICK_UNLOCK_KEPT_ON.
+ */
+private inline fun <T> mappedQuick(block: () -> T): T = mappedQuickErrors(block)

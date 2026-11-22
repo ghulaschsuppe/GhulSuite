@@ -459,9 +459,31 @@ class AndroidVaultBackend(private val context: Context, private val activity: ()
 
     override fun onProtectionChanged() = quick.disableAll()
 
+    override fun keepAccess(ref: SuiteFileRef): Boolean = runCatching {
+        val uri = Uri.parse(ref.id)
+        if (!android.provider.DocumentsContract.isDocumentUri(context, uri)) return@runCatching false
+        context.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+        true
+    }.getOrDefault(false)
+
+    /** The last copy handed to another app (r9 M-1): its read grant is taken back before the next one. */
+    @Volatile
+    private var sharedUri: Uri? = null
+
+    /**
+     * r9 M-1: takes back the read grant of the last copy and deletes the copies. A grant is bound
+     * to the URI, not to the file, so without this an app chosen once could read a later copy
+     * under the same name; every copy has a folder of its own as well.
+     */
+    private fun dropSharedCopies() {
+        sharedUri?.let { runCatching { context.revokeUriPermission(it, Intent.FLAG_GRANT_READ_URI_PERMISSION) } }
+        sharedUri = null
+        File(context.cacheDir, "shared").deleteRecursively()
+    }
+
     override fun lock() {
         // Decrypted copies handed to other apps and a copied password do not outlive the session.
-        File(context.cacheDir, "shared").deleteRecursively()
+        dropSharedCopies()
         // An "open with" choice that waited would point at a deleted copy, above the lock screen.
         pendingChooser = null
         clearOwnClip()
@@ -505,7 +527,9 @@ class AndroidVaultBackend(private val context: Context, private val activity: ()
             throw VaultException(VaultErrorKind.INVALID_INPUT, "This kind of file is not opened with another app.")
         }
         val target = withContext(Dispatchers.IO) {
-            val dir = File(context.cacheDir, "shared").apply { deleteRecursively(); mkdirs() }
+            dropSharedCopies()
+            val random = ByteArray(8).also { java.security.SecureRandom().nextBytes(it) }.joinToString("") { "%02x".format(it) }
+            val dir = File(File(context.cacheDir, "shared"), random).apply { mkdirs() }
             File(dir, fileName)
         }
         val out = withContext(Dispatchers.IO) { java.io.BufferedOutputStream(java.io.FileOutputStream(target), 1 shl 20) }
@@ -524,6 +548,7 @@ class AndroidVaultBackend(private val context: Context, private val activity: ()
             }
         }
         val uri = androidx.core.content.FileProvider.getUriForFile(context, context.packageName + ".files", target)
+        sharedUri = uri
         // "Open with": the apps that show this type (not the share targets).
         val intent = Intent(Intent.ACTION_VIEW).setDataAndType(uri, viewMime(fileName))
         intent.clipData = ClipData.newRawUri("", uri)

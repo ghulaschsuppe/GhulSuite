@@ -53,6 +53,7 @@ private val CORE_TEXTS: Map<String, StringResource> = mapOf(
     "the copy could not be marked as downloaded" to Res.string.docs_open_no_mark,
     "the update needs PowerShell" to Res.string.upd_no_powershell,
     "an earlier opening of a suite file could not be finished" to Res.string.core_replace_unfinished,
+    "an earlier save could not be finished: the files before it cannot be put back yet" to Res.string.core_save_unfinished,
     "the documents before the replace were not found" to Res.string.core_replace_aside_missing,
     // From the app's own file access (reading or writing a suite file as a stream).
     "the file cannot be read" to Res.string.file_unreadable,
@@ -81,6 +82,11 @@ private val CORE_TEXTS: Map<String, StringResource> = mapOf(
     "attachment too large (max 10 MB)" to Res.string.core_attach_big,
     "the suite file would be too large" to Res.string.core_suite_too_large,
     "the vaults besides GhulDocs are full" to Res.string.core_other_full,
+    // r9 (attackers' review): limits of the core.
+    "the app PIN is too easy to guess: no repeated digits or blocks, no runs, no dates" to Res.string.pin_too_simple,
+    "this vault is full: one vault file holds at most 128 MiB" to Res.string.core_vault_full,
+    "the calendar file is larger than 16 MiB" to Res.string.core_ics_too_large,
+    "too many columns or fields in this CSV file" to Res.string.core_csv_too_wide,
     "the documents before could not be put back, they were kept in a folder of their own" to Res.string.core_docs_kept_aside,
     "no such group" to Res.string.core_no_group,
     "no password" to Res.string.core_no_password,

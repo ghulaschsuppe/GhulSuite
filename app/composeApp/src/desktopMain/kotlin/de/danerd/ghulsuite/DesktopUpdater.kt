@@ -42,8 +42,15 @@ class DesktopUpdater : CoreUpdater(if (DesktopPaths.portable) "-portable.zip" el
         // write, rename or delete it) from the hash check until msiexec has ended. Without
         // PowerShell this throws here and the app stays open with the message.
         val script = updateScript(ProcessHandle.current().pid(), msi.absoluteFile, expectedSha256(update), exe!!.absoluteFile, resultFile.absoluteFile)
+        // r9 H-1: by its full path only. A bare "powershell" is looked for in the current folder of
+        // GhulSuite first (the folder of a suite file opened by double click, e.g. on a stick), so
+        // a planted powershell.exe there would run. Children do not search it either.
+        val ps = powershellExe(System.getenv("SystemRoot"))
         try {
-            ProcessBuilder("powershell", "-NoProfile", "-NonInteractive", "-EncodedCommand", encodedCommand(script)).directory(dir).start()
+            if (ps == null) throw java.io.IOException("no PowerShell")
+            ProcessBuilder(updateCommand(ps, script)).directory(dir)
+                .apply { environment()["NoDefaultCurrentDirectoryInExePath"] = "1" }
+                .start()
         } catch (e: java.io.IOException) {
             dir.deleteRecursively()
             throw de.danerd.ghulsuite.model.VaultException(de.danerd.ghulsuite.model.VaultErrorKind.INVALID_INPUT, NO_POWERSHELL)
@@ -91,6 +98,21 @@ internal const val PENDING_GRACE_MS = 10 * 60 * 1000L
 /** Exit codes of msiexec that mean success: 0, and "done, restart needed" (1641, 3010). */
 internal fun failedInstall(code: String): Boolean = code !in setOf("0", "1641", "3010")
 
+/**
+ * The PowerShell of Windows by its full path (r9 H-1), null when it is not there. [systemRoot]
+ * is %SystemRoot%; without it the usual folder.
+ */
+internal fun powershellExe(systemRoot: String?, isFile: (File) -> Boolean = { it.isFile }): File? {
+    val root = systemRoot?.takeIf { it.isNotBlank() && File(it).isAbsolute } ?: "C:\\Windows"
+    return File(root, "System32\\WindowsPowerShell\\v1.0\\powershell.exe").takeIf(isFile)
+}
+
+/** The command line of the update: [ps] (absolute) with the script as one argument. */
+internal fun updateCommand(ps: File, script: String): List<String> {
+    require(ps.isAbsolute) { "PowerShell only by its full path" }
+    return listOf(ps.path, "-NoProfile", "-NonInteractive", "-EncodedCommand", encodedCommand(script))
+}
+
 /** PowerShell's -EncodedCommand: the script in UTF-16LE, Base64. */
 internal fun encodedCommand(script: String): String =
     java.util.Base64.getEncoder().encodeToString(script.toByteArray(Charsets.UTF_16LE))
@@ -114,7 +136,7 @@ internal fun updateScript(pid: Long, msi: File, sha256: String, exe: File, resul
         "  try {",
         "    \$h = -join ([Security.Cryptography.SHA256]::Create().ComputeHash(\$f) | ForEach-Object { \$_.ToString('X2') })",
         "    if (\$h -ne '$hash') { \$code = 'hash' } else {",
-        "      \$p = Start-Process -FilePath 'msiexec.exe' -ArgumentList @('/i', ${q("\"" + msi.path + "\"")}, '/passive', '/norestart') -Wait -PassThru",
+        "      \$p = Start-Process -FilePath (Join-Path \$env:SystemRoot 'System32\\msiexec.exe') -ArgumentList @('/i', ${q("\"" + msi.path + "\"")}, '/passive', '/norestart') -Wait -PassThru",
         "      \$code = [string]\$p.ExitCode",
         "    }",
         "  } finally { \$f.Close() }",

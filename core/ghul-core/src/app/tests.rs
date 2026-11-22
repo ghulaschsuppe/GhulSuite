@@ -155,7 +155,12 @@ impl Drop for Dirs {
 }
 
 fn key() -> Arc<dyn HidTransport> {
-    MockAuthenticator::new(MockConfig { protocols: vec![2, 1], fido_2_1: true, pin: Some("1234".into()) })
+    MockAuthenticator::new(MockConfig {
+        protocols: vec![2, 1],
+        fido_2_1: true,
+        pin: Some("1234".into()),
+        cred_protect: true,
+    })
 }
 
 fn listener() -> Arc<dyn FidoListener> {
@@ -472,12 +477,14 @@ fn vault_management_and_suite_from_vault() {
             "C".into(),
         )
         .unwrap();
-    assert_eq!(r.recovery_code, None, "the vault already carries the suite's code");
+    // r9 M-D1: always a new code (the file may come from someone else, who knows the old one).
+    let new_code = r.recovery_code.expect("a new code");
     let vaults = f.list_vaults().unwrap();
     assert_eq!((vaults.len(), vaults[0].kind, vaults[0].entries), (1, VaultKind::Pass, 1));
     f.lock();
-    // The recovery code of the original suite opens the single vault, too.
-    f.unlock_with_recovery_code(setup.recovery_code.unwrap(), "neu-neu-neu-Kq7wZ".into()).unwrap();
+    // The recovery code of the original suite no longer opens the new one; the new code does.
+    assert!(f.unlock_with_recovery_code(setup.recovery_code.unwrap(), "neu-neu-neu-Kq7wZ".into()).is_err());
+    f.unlock_with_recovery_code(new_code, "neu-neu-neu-Kq7wZ".into()).unwrap();
     assert_eq!(f.list_entries(VaultKind::Pass, None).unwrap()[0].title, "Jira");
 }
 
@@ -1109,6 +1116,18 @@ fn recovery_code_counts_only_when_a_group_was_typed_back() {
     // A new code needs its own confirmation.
     let new = s.new_recovery_code(kf_proof(PW, &kf), None, None, "Neu".into()).unwrap();
     assert!(!s.recovery_confirmed().unwrap());
+    // r9 krypto M2: the whole code typed back: a slip in any group (here the last) is found,
+    // the old code does not count, the new one (lower case, without dashes) does.
+    let mut slip: Vec<char> = new.chars().collect();
+    let last = slip.len() - 1;
+    slip[last] = if slip[last] == '2' { '3' } else { '2' };
+    assert!(!s.confirm_whole_recovery_code(slip.into_iter().collect()).unwrap());
+    assert!(!s.confirm_whole_recovery_code(code.clone()).unwrap());
+    assert!(!s.recovery_confirmed().unwrap());
+    assert!(s.confirm_whole_recovery_code(new.replace('-', " ").to_lowercase()).unwrap());
+    assert!(s.recovery_confirmed().unwrap());
+    let new = s.new_recovery_code(kf_proof(PW, &kf), None, None, "Neu".into()).unwrap();
+    assert!(!s.recovery_confirmed().unwrap());
     assert!(s.confirm_recovery_code(0, group(&new, 0)).unwrap());
     assert!(s.recovery_confirmed().unwrap());
 }
@@ -1280,6 +1299,7 @@ mod format_freeze;
 mod hardening;
 mod properties;
 mod quick_pin;
+mod r9;
 mod rekey;
 mod single;
 

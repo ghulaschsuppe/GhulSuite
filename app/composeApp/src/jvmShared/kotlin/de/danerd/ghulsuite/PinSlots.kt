@@ -32,6 +32,29 @@ interface PinKeyStore {
     class DeviceLocked(cause: Throwable? = null) : Exception("the device is locked", cause)
 }
 
+/** Where the keystore keeps a PIN key (from KeyInfo.securityLevel). */
+enum class PinKeyLevel { STRONGBOX, TEE, SOFTWARE, OTHER }
+
+/**
+ * r9 N6: whether a PIN key on [level] is good enough. Secure hardware always; the software
+ * keystore only for the development build on an emulator (the CI's emulator runs have no secure
+ * hardware). A release build, or a development build on a real phone, never takes it.
+ */
+fun pinKeyLevelAccepted(level: PinKeyLevel, devBuild: Boolean, emulator: Boolean): Boolean = when (level) {
+    PinKeyLevel.STRONGBOX, PinKeyLevel.TEE -> true
+    PinKeyLevel.SOFTWARE -> devBuild && emulator
+    PinKeyLevel.OTHER -> false
+}
+
+/**
+ * Whether the device is the Android emulator, from what it says about itself (any one is
+ * enough): the qemu properties, or a build fingerprint or product of the SDK images.
+ */
+fun looksLikeEmulator(fingerprint: String, product: String, bootQemu: String, kernelQemu: String): Boolean =
+    bootQemu == "1" || kernelQemu == "1" ||
+        fingerprint.startsWith("generic") || fingerprint.contains("emulator") || fingerprint.contains("sdk_gphone") ||
+        product.startsWith("sdk_gphone") || product.startsWith("sdk_google") || product == "sdk" || product.startsWith("emulator")
+
 /** One prepared use of a PIN key: [doFinal] uses it up. */
 fun interface PinMac {
     fun doFinal(message: ByteArray): ByteArray

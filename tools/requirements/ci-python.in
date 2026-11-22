@@ -1,0 +1,7 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Independent check of the test vectors and of the Maestro flows (android.yml, tools/precheck.sh).
+argon2-cffi
+cbor2
+cryptography
+pynacl
+pyyaml

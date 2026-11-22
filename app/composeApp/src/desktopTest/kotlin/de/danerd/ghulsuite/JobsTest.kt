@@ -16,6 +16,7 @@ import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertNotSame
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
@@ -38,6 +39,55 @@ class JobsTest {
             check(System.currentTimeMillis() < end) { "timed out: $what" }
             Thread.sleep(20)
         }
+    }
+
+    /**
+     * r9 dieb N3: coming back drops a waiting automatic lock, but not the one from the screen
+     * going off: that one locks as soon as someone is back.
+     */
+    @Test
+    fun theScreenOffLockIsNotDroppedByComingBack() {
+        val (s, fake) = state()
+        s.jobs.stallMillis = 60_000
+        val busy = s.jobs.start(JobKind.UPLOAD, title = { "busy" }) { j ->
+            repeat(100) { kotlinx.coroutines.delay(50); j.done++ }
+            null
+        }
+        Thread.sleep(200)
+        s.autoLock()
+        s.keepUnlocked()
+        Thread.sleep(200)
+        assertEquals(0, fake.locks, "time away: dropped when back")
+        s.autoLock(firm = true)
+        Thread.sleep(200)
+        assertEquals(0, fake.locks, "waits while the job makes progress")
+        s.keepUnlocked()
+        waitUntil(2_000, "back after the screen was off: locked") { fake.locks == 1 }
+        waitUntil(what = "the job stopped") { !busy.active }
+    }
+
+    /**
+     * r10 M2, r11: Android keeps the display on only while a job the user started makes progress;
+     * a quiet job or one that stalled keeps nothing on.
+     */
+    @Test
+    fun onlyAProgressingUserJobKeepsTheScreenOn() {
+        val (s, _) = state()
+        s.jobs.stallMillis = 400
+        val progressing = { de.danerd.ghulsuite.ui.JobStatus.userJobProgressing() }
+        // Its own lane, so it does not hold the other job back.
+        val quiet = s.jobs.start(JobKind.DOWNLOAD, title = { "quiet" }, quiet = true, lane = "quiet") { awaitCancellation() }
+        Thread.sleep(100)
+        assertFalse(progressing(), "a quiet job keeps nothing on")
+        val busy = s.jobs.start(JobKind.UPLOAD, title = { "busy" }) { j ->
+            repeat(6) { kotlinx.coroutines.delay(100); j.done++ }
+            awaitCancellation()
+        }
+        waitUntil(2_000, "on while it makes progress") { progressing() }
+        waitUntil(3_000, "off once it stalled") { !progressing() }
+        assertTrue(busy.active, "still running, but no longer reporting")
+        s.jobs.cancel(busy)
+        s.jobs.cancel(quiet)
     }
 
     /** A quiet job (one the app started itself) never holds the automatic lock back: it stops. */

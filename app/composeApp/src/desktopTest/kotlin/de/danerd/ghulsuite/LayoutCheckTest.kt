@@ -176,8 +176,10 @@ class LayoutCheckTest {
         Locale.setDefault(locale)
         val findings = mutableListOf<String>()
         val allNotes = mutableListOf<String>()
-        for (phone in phones) {
-            var current by mutableStateOf(0)
+        // In parts of a few screens: all screens of one phone in one run took longer than the
+        // test framework's minute on a busy machine (German, the longest texts).
+        for (phone in phones) for (part in screens.indices.chunked(SCREENS_PER_RUN)) {
+            var current by mutableStateOf(part.first())
             runDesktopComposeUiTest(phone.widthDp * 2, phone.heightDp * 2) {
                 // A screen with an endless animation (a spinner) never becomes idle: the clock is
                 // moved on by hand instead of waiting for idle.
@@ -188,7 +190,7 @@ class LayoutCheckTest {
                         key(current) { GhulSuiteApp(screens[current].second()) }
                     }
                 }
-                for (i in screens.indices) {
+                for (i in part) {
                     current = i
                     mainClock.advanceTimeBy(1_500)
                     endOldScopes()
@@ -216,6 +218,8 @@ class LayoutCheckTest {
     }
 
     private val pictures = File("build/screenshots").apply { mkdirs() }
+
+    private val SCREENS_PER_RUN = 12
 
     private fun DesktopComposeUiTest.picture(name: String) {
         val bitmap = captureToImage().asSkiaBitmap()

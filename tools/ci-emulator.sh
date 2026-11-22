@@ -83,7 +83,7 @@ if [ "${SKIP_MAESTRO:-0}" != 1 ]; then
   "$(dirname "$0")/check-logcat.sh" "$out/logcat-full.txt" "$out" || logcat_rc=$?
   # Every step leaves a picture to be looked at. A picture of a black screen (the app forbids
   # screenshots, see TestDevice.kt) is a few kilobytes as PNG, a real screen many times that.
-  python3 -c "import PIL" 2> /dev/null || pip install --quiet pillow > /dev/null 2>&1 || true
+  python3 -c "import PIL" 2> /dev/null || pip install --quiet --require-hashes -r "$(dirname "$0")/requirements/ci-pillow.txt" > /dev/null 2>&1 || true
   if ! python3 "$(dirname "$0")/check-black-screenshots.py" "$out"; then
     logcat_rc=1
   fi

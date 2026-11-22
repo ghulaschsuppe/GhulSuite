@@ -85,7 +85,7 @@ fun UnlockScreen(state: AppState) {
     fun biometric() {
         state.run(onError = { error = it; promptEnded = kotlin.time.TimeSource.Monotonic.markNow() }, block = {
             try {
-                backend.unlockWithBiometric()
+                lockedMeansTryAgain { backend.unlockWithBiometric() }
                 true
             } catch (e: VaultException) {
                 if (e.kind == VaultErrorKind.BIOMETRIC_LOCKOUT) bioLockedOut = true
@@ -131,7 +131,7 @@ fun UnlockScreen(state: AppState) {
                     Button(onClick = {
                         state.run(onError = { error = it; appPin = "" }, block = {
                             try {
-                                backend.unlockWithPin(appPin)
+                                lockedMeansTryAgain { backend.unlockWithPin(appPin) }
                                 true
                             } catch (e: VaultException) {
                                 if (e.kind == VaultErrorKind.QUICK_INVALID && (e.retries ?: 0) > 0) throw e
@@ -187,9 +187,9 @@ fun UnlockScreen(state: AppState) {
                     onClick = {
                         state.run(onError = { error = it }, block = {
                             if (needsKey) {
-                                backend.unlock(password, pin, null, state.onTouchNeeded)
+                                lockedMeansTryAgain { backend.unlock(password, pin, null, state.onTouchNeeded) }
                             } else {
-                                backend.unlock(password, null, keyfile?.bytes, state.onTouchNeeded)
+                                lockedMeansTryAgain { backend.unlock(password, null, keyfile?.bytes, state.onTouchNeeded) }
                             }
                         }) {
                             // What worked is chosen first next time.
@@ -225,10 +225,7 @@ fun UnlockScreen(state: AppState) {
             UnlockMode.RECOVERY -> {
                 SectionLabel(stringResource(Res.string.unlock_code_title))
                 HintText(stringResource(Res.string.unlock_code_text))
-                OutlinedTextField(
-                    code, { code = it; error = null }, label = { Text(stringResource(Res.string.l_recovery_code)) },
-                    modifier = Modifier.fillMaxWidth(),
-                )
+                RecoveryCodeField(code, { code = it; error = null }, stringResource(Res.string.l_recovery_code))
                 Hint(stringResource(Res.string.unlock_code_new_password))
                 SecretTextField(password, { password = it; error = null }, stringResource(Res.string.l_new_password))
                 if (password.isNotEmpty()) StrengthMeter(backend.passwordScore(password))
@@ -243,7 +240,7 @@ fun UnlockScreen(state: AppState) {
                         scope.launch {
                             error = PasswordPolicy.check(backend, password, repeat)
                             if (error != null) return@launch
-                            state.run(onError = { error = it }, block = { backend.unlockWithRecoveryCode(code, password) }) {
+                            state.run(onError = { error = it }, block = { lockedMeansTryAgain { backend.unlockWithRecoveryCode(code, password) } }) {
                                 clear()
                                 // U11: what to do now is shown right after unlocking, not only as a toast.
                                 state.recoveredGuide = true
@@ -261,3 +258,13 @@ fun UnlockScreen(state: AppState) {
 
 /** M19, M42: an app PIN has 8 to 12 digits (the rule of the core), wherever it is set or typed. */
 val MIN_APP_PIN: Int get() = PasswordPolicy.MIN_APP_PIN
+
+/**
+ * r13 N3: "locked" while unlocking means a lock came in between (the screen went off, a panic
+ * lock): not "the vault is locked", but "please try once more". Nothing is retried by itself.
+ */
+internal suspend fun <T> lockedMeansTryAgain(block: suspend () -> T): T = try {
+    block()
+} catch (e: VaultException) {
+    if (e.kind == VaultErrorKind.LOCKED) throw VaultException(VaultErrorKind.TRY_AGAIN, e.detail) else throw e
+}

@@ -496,6 +496,9 @@ class DesktopVaultBackend(private val window: () -> java.awt.Window?) :
             if (seconds > 0) timer.schedule(seconds * 1000L) { WinNative.clearIfUnchanged(sequence) }
             return
         }
+        // r9 dieb N6: on Windows never the normal clipboard instead (its history and the cloud
+        // would keep the secret): said, and copied again by the user.
+        if (WinNative.isWindows) throw VaultException(VaultErrorKind.CLIPBOARD_BUSY)
         copiedSequence = null
         copiedText = text
         val clipboard = Toolkit.getDefaultToolkit().systemClipboard

@@ -69,6 +69,9 @@ object AppLaunch {
     /** A suite file (.ghlzip) opened with GhulSuite from another app (file manager, double click). */
     val suiteFile = kotlinx.coroutines.flow.MutableStateFlow<PickedSuiteFile?>(null)
 
+    /** r10 N1: a file handed over by a second start that is not opened (a network path): said once. */
+    val refusedPath = kotlinx.coroutines.flow.MutableStateFlow<String?>(null)
+
     /** A calendar file (.ics) opened with GhulSuite: imported into the default calendar. */
     val icsFile = kotlinx.coroutines.flow.MutableStateFlow<ByteArray?>(null)
 
@@ -206,6 +209,7 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
      */
     class DeleteAsk(val names: List<String>, val action: () -> Unit, val trash: Boolean = false)
 
+
     // Declared before init (the lock listener there clears it).
     var deleteAsk by mutableStateOf<DeleteAsk?>(null)
 
@@ -319,11 +323,17 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
      */
     var editorDirty by mutableStateOf(false)
 
+    /** r11 M2: the idle lock comes within a minute and takes unsaved input with it (said once). */
+    var idleWarning by mutableStateOf(false)
+
     /** A scan in progress (photos and pages in memory only); wiped when it ends or the suite locks. */
     var scanSession: ScanSession? = null
 
     /** U11: opened with the recovery code: the next steps are shown once (see [RecoveredDialog]). */
     var recoveredGuide by mutableStateOf(false)
+
+    /** r9 N-D2: a suite file from another app, opened: "save here from now on?" (null: nothing asked). */
+    var saveTargetOffer by mutableStateOf<de.danerd.ghulsuite.model.SuiteFileRef?>(null)
 
     /** H4: an archive waits for "open anyway" before it goes to another app. */
     var archiveAsk by mutableStateOf<de.danerd.ghulsuite.model.DocsItemUi?>(null)
@@ -615,6 +625,8 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
                     confirmDiscard = false
                     pendingTab = null
                     deleteAsk = null
+                    // r10 N2: a question about another file's place does not wait across a lock.
+                    saveTargetOffer = null
                     dropPending()
                     // A scan in progress: its photos and pages are overwritten now, not saved.
                     scanSession?.wipe()
@@ -669,6 +681,8 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
         // Android asks the jobs first.
         JobStatus.cancelAll = { jobs.cancelAll() }
         JobStatus.autoLock = { autoLock() }
+        JobStatus.autoLockFirm = { autoLock(firm = true) }
+        JobStatus.userJobProgressing = { jobs.progressing() }
         JobStatus.keepUnlocked = { keepUnlocked() }
         // Going to the background carries out what waits for "Undo": the auto lock may come next.
         scope.launch { AppLaunch.inFront.collect { if (!it) catching { settlePending() } } }
@@ -693,6 +707,14 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
         scope.launch { AppLaunch.openEvent.collect { if (it != null && backend.unlocked.value) applyLaunch() } }
         scope.launch { AppLaunch.newEvent.collect { if (it != null && backend.unlocked.value) applyLaunch() } }
         scope.launch { AppLaunch.icsFile.collect { if (it != null && backend.unlocked.value) applyLaunch() } }
+        scope.launch {
+            AppLaunch.refusedPath.collect { path ->
+                if (path != null) {
+                    AppLaunch.refusedPath.value = null
+                    message(getString(Res.string.file_network_path, path.substringAfterLast('\\').substringAfterLast('/')))
+                }
+            }
+        }
         scope.launch { AppLaunch.docsFiles.collect { if (it != null && backend.unlocked.value) applyLaunch() } }
         // A suite file handed over: unlocked, the page of the suite file opens it; locked, the start
         // screen does (as "Open another suite or vault" would).
@@ -1039,6 +1061,7 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
      */
     fun lockNow() {
         jobs.lockWhenDone = false
+        jobs.firmLock = false
         jobs.cancelAll(byLock = true)
         // A state whose screens are gone (its scope ended) still locks.
         if (!scope.coroutineContext[kotlinx.coroutines.Job].let { it == null || it.isActive }) {
@@ -1056,10 +1079,17 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
      * jobs the user started are waited for while they make progress (see [Jobs.autoLock]). A lock
      * by hand stops every job at once ([lockNow]).
      */
-    fun autoLock() = jobs.autoLock()
+    fun autoLock(firm: Boolean = false) = jobs.autoLock(firm)
 
-    /** The user is back before the jobs ended: the waiting automatic lock is dropped. */
+    /**
+     * The user is back before the jobs ended: the waiting automatic lock is dropped. One from the
+     * screen going off ([Jobs.firmLock]) is not: it locks now (r9 dieb N3).
+     */
     fun keepUnlocked() {
+        if (jobs.lockWhenDone && jobs.firmLock) {
+            lockNow()
+            return
+        }
         jobs.lockWhenDone = false
     }
 
@@ -1068,7 +1098,12 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
     }
 
     fun copy(label: String, value: String) {
-        backend.copySensitive(label, value)
+        try {
+            backend.copySensitive(label, value)
+        } catch (e: VaultException) {
+            scope.launch { snackbar.showSnackbar(describe(e)) }
+            return
+        }
         scope.launch { snackbar.showSnackbar(getString(Res.string.msg_copied, label)) }
     }
 
@@ -1197,6 +1232,8 @@ private suspend fun describeText(e: Throwable): String {
         VaultErrorKind.INVALID_RECOVERY_CODE -> getString(Res.string.err_invalid_code)
         VaultErrorKind.LOCKED -> getString(Res.string.err_locked)
         VaultErrorKind.DEVICE_LOCKED -> getString(Res.string.err_device_locked)
+        VaultErrorKind.CLIPBOARD_BUSY -> getString(Res.string.err_clipboard_busy)
+        VaultErrorKind.TRY_AGAIN -> getString(Res.string.err_try_again)
         VaultErrorKind.CORRUPTED -> getString(Res.string.err_corrupted, coreText(e.detail) ?: e.detail)
         VaultErrorKind.TAMPERED -> getString(Res.string.err_tampered)
         VaultErrorKind.PROTECTION_OUTDATED -> getString(Res.string.err_protection_outdated)

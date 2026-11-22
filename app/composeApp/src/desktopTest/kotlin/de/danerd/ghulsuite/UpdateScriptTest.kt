@@ -36,6 +36,28 @@ class UpdateScriptTest {
         assertFalse(s.contains("update.cmd"))
     }
 
+    /** r9 H-1: PowerShell only by its full path (never looked up in the current folder), else none. */
+    @Test
+    fun powershellIsStartedByItsFullPath() {
+        val root = kotlin.io.path.createTempDirectory("sysroot").toFile()
+        try {
+            val ps = powershellExe(root.absolutePath) { true }!!
+            val cmd = updateCommand(ps, "Write-Output 1")
+            assertTrue(File(cmd.first()).isAbsolute, cmd.first())
+            assertTrue(cmd.first().endsWith("powershell.exe"), cmd.first())
+            assertEquals(listOf("-NoProfile", "-NonInteractive", "-EncodedCommand"), cmd.subList(1, 4))
+            // Not there: no PowerShell (the app says so), never a bare name.
+            assertEquals(null, powershellExe(root.absolutePath) { false })
+            // A relative %SystemRoot% is not taken.
+            assertFalse(powershellExe("Windows") { true }!!.path.startsWith("Windows"))
+            kotlin.test.assertFailsWith<IllegalArgumentException> { updateCommand(File("powershell.exe"), "x") }
+            // msiexec by its full path as well.
+            assertTrue(updateScript(1, msi, "0".repeat(64), exe, result).contains("Join-Path \$env:SystemRoot 'System32\\msiexec.exe'"))
+        } finally {
+            root.deleteRecursively()
+        }
+    }
+
     @Test
     fun exitCodesOfMsiexec() {
         for (ok in listOf("0", "1641", "3010")) assertFalse(failedInstall(ok), ok)

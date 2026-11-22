@@ -29,6 +29,8 @@ class AndroidPinKeyStore(private val context: Context, private val keyStore: Key
         val secure = context.getSystemService(android.app.KeyguardManager::class.java)?.isDeviceSecure == true
         // The other slot of this generation decides the level, if it is there already.
         val sibling = aliases().firstOrNull { it != alias && it.substringBeforeLast('.') == alias.substringBeforeLast('.') }
+        // StrongBox missing ("No such security level") fails here and the TEE is tried next; a
+        // failed attempt leaves no alias behind (deleted in the catch).
         val levels = when (sibling?.let { levelOf(it) }) {
             KeyProperties.SECURITY_LEVEL_STRONGBOX -> listOf(true)
             null -> listOf(true, false)
@@ -49,12 +51,10 @@ class AndroidPinKeyStore(private val context: Context, private val keyStore: Key
                 // from here (it goes with the garbage collector); the caller clears its array.
                 keyStore.setEntry(alias, KeyStore.SecretKeyEntry(SecretKeySpec(key, "HmacSHA256")), protection)
                 val info = info(alias) ?: throw IllegalStateException("no key info")
-                val level = info.securityLevel
+                val level = levelName(info.securityLevel)
+                android.util.Log.i("GhulSuite", "app PIN key: level $level (StrongBox tried: $strongBox)")
                 if (info.remainingUsageCount != 1) throw IllegalStateException("not a single use key")
-                if (level != KeyProperties.SECURITY_LEVEL_STRONGBOX && level != KeyProperties.SECURITY_LEVEL_TRUSTED_ENVIRONMENT) {
-                    throw IllegalStateException("not in secure hardware (level $level)")
-                }
-                android.util.Log.i("GhulSuite", "app PIN key: level ${if (level == KeyProperties.SECURITY_LEVEL_STRONGBOX) "StrongBox" else "TEE"}")
+                if (!pinKeyLevelAccepted(level, devBuild, emulator)) throw IllegalStateException("not in secure hardware (level $level)")
                 return
             } catch (e: Exception) {
                 last = e
@@ -62,6 +62,24 @@ class AndroidPinKeyStore(private val context: Context, private val keyStore: Key
             }
         }
         throw last ?: IllegalStateException("no key")
+    }
+
+    /** The development build (the CI's emulator runs use it), see [pinKeyLevelAccepted]. */
+    private val devBuild = context.packageName.endsWith(".dev")
+
+    private val emulator: Boolean by lazy {
+        looksLikeEmulator(android.os.Build.FINGERPRINT.orEmpty(), android.os.Build.PRODUCT.orEmpty(), property("ro.boot.qemu"), property("ro.kernel.qemu"))
+    }
+
+    private fun property(key: String): String = runCatching {
+        Class.forName("android.os.SystemProperties").getMethod("get", String::class.java).invoke(null, key) as String
+    }.getOrDefault("")
+
+    private fun levelName(level: Int): PinKeyLevel = when (level) {
+        KeyProperties.SECURITY_LEVEL_STRONGBOX -> PinKeyLevel.STRONGBOX
+        KeyProperties.SECURITY_LEVEL_TRUSTED_ENVIRONMENT -> PinKeyLevel.TEE
+        KeyProperties.SECURITY_LEVEL_SOFTWARE -> PinKeyLevel.SOFTWARE
+        else -> PinKeyLevel.OTHER
     }
 
     override fun delete(alias: String) {

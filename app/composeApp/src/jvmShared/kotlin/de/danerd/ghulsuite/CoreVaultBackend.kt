@@ -1009,6 +1009,8 @@ abstract class CoreVaultBackend(private val localDir: String) : VaultBackend {
     override suspend fun confirmRecoveryCode(group: Int, typed: String): Boolean =
         io { suite.confirmRecoveryCode(group.toUInt(), typed) }
 
+    override suspend fun confirmWholeRecoveryCode(typed: String): Boolean = io { suite.confirmWholeRecoveryCode(typed) }
+
     override suspend fun exportVault(id: String): ByteArray = io { suite.exportVault(id) }
 
     override suspend fun addVaultFile(data: ByteArray, name: String): String = io { suite.addVaultFile(data, name) }

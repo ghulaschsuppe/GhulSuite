@@ -1,0 +1,3 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Screenshot comparison (android.yml) and the emulator screenshots (tools/ci-emulator.sh).
+pillow==11.3.0

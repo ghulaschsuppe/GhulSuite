@@ -151,6 +151,9 @@ jobs:
     runs-on: ubuntu-latest
     environment: release
     timeout-minutes: 45
+    # The SHA-256 of what this job built: publish checks the downloaded file against it.
+    outputs:
+      apk: ${{ steps.dist.outputs.apk }}
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
@@ -183,9 +186,11 @@ jobs:
           GHUL_KEYSTORE_FILE="$file" GHUL_KEYSTORE_PASSWORD="$KEYSTORE_PASSWORD" GHUL_KEY_ALIAS="$KEY_ALIAS" \
             ./gradlew --no-daemon --console=plain :composeApp:assembleRelease
       - name: Bereitstellen
+        id: dist
         run: |
           mkdir -p dist
           cp app/composeApp/build/outputs/apk/release/composeApp-release.apk dist/GhulSuite.apk
+          echo "apk=$(sha256sum dist/GhulSuite.apk | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: release-android
@@ -198,6 +203,9 @@ jobs:
     if: needs.plan.outputs.release == 'true'
     runs-on: windows-latest
     timeout-minutes: 60
+    outputs:
+      msi: ${{ steps.dist.outputs.msi }}
+      zip: ${{ steps.dist.outputs.zip }}
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
@@ -219,6 +227,7 @@ jobs:
           rustup toolchain install  # the version of rust-toolchain.toml
           ./gradlew --no-daemon --console=plain :composeApp:packageMsi :composeApp:createDistributable
       - name: Bereitstellen
+        id: dist
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force dist | Out-Null
@@ -227,6 +236,8 @@ jobs:
           $app = "app/composeApp/build/compose/binaries/main/app/GhulSuite"
           Set-Content -Path "$app/portable" -Value "GhulSuite portabel: Daten liegen im Ordner GhulSuite-Daten neben dem Programm."
           Compress-Archive -Path $app -DestinationPath dist/GhulSuite-portable.zip -Force
+          "msi=$((Get-FileHash dist/GhulSuite.msi -Algorithm SHA256).Hash.ToLower())" >> $env:GITHUB_OUTPUT
+          "zip=$((Get-FileHash dist/GhulSuite-portable.zip -Algorithm SHA256).Hash.ToLower())" >> $env:GITHUB_OUTPUT
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: release-windows
@@ -242,11 +253,32 @@ jobs:
     permissions:
       contents: write
     steps:
+      # r9 H1 (supply chain): only the two artifacts of the build jobs, by their exact names (any
+      # other job of the run could upload one more "release-..."), and exactly the three files
+      # those jobs built (their SHA-256 come as job outputs), before anything is signed.
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
-          pattern: release-*
-          merge-multiple: true
+          name: release-android
           path: dist/
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: release-windows
+          path: dist/
+      - name: Genau die gebauten Dateien
+        env:
+          APK: ${{ needs.android.outputs.apk }}
+          MSI: ${{ needs.windows.outputs.msi }}
+          ZIP: ${{ needs.windows.outputs.zip }}
+        run: |
+          cd dist
+          files=$(find . -mindepth 1 -printf '%P\n' | LC_ALL=C sort | tr '\n' ' ')
+          if [ "$files" != "GhulSuite-portable.zip GhulSuite.apk GhulSuite.msi " ]; then
+            echo "::error::Unerwartete Dateien im Release: $files"; exit 1
+          fi
+          for h in "$APK" "$MSI" "$ZIP"; do
+            printf '%s' "$h" | grep -qE '^[0-9a-f]{64}$' || { echo "::error::Prüfsumme eines Bau-Jobs fehlt."; exit 1; }
+          done
+          printf '%s  GhulSuite.apk\n%s  GhulSuite.msi\n%s  GhulSuite-portable.zip\n' "$APK" "$MSI" "$ZIP" | sha256sum -c -
       # SHA256SUMS signed with the private key of the signing key (never leaves this job), then
       # checked against the public key the app carries: what the app would accept.
       - name: Prüfsummen signieren
@@ -285,7 +317,14 @@ jobs:
             notes="Stabile Version. Prüfsummen in SHA256SUMS, signiert in SHA256SUMS.sig."
             flags="--latest"
           fi
-          gh release create "v$VERSION" dist/* --target "$SHA" --title "$title" --notes "$notes" --generate-notes $flags
+          # r9 M4: a tag of this name made meanwhile elsewhere would make the release point to
+          # other sources (GitHub ignores --target for an existing tag).
+          tag=$(gh api "repos/$GH_REPO/git/matching-refs/tags/v$VERSION" -q ".[] | select(.ref == \"refs/tags/v$VERSION\") | .object.sha")
+          if [ -n "$tag" ] && [ "$tag" != "$SHA" ]; then
+            echo "::error::Der Tag v$VERSION gibt es schon ($tag, nicht $SHA): keine Veröffentlichung."; exit 1
+          fi
+          # r9 N4: no notes generated from the titles of pull requests (the app shows the notes).
+          gh release create "v$VERSION" dist/* --target "$SHA" --title "$title" --notes "$notes" $flags
       # Only the newest five development versions stay (the stable ones all stay).
       - name: Alte Vorabversionen aufräumen
         if: needs.plan.outputs.prerelease == 'true'

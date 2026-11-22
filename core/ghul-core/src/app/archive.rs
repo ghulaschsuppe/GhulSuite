@@ -107,6 +107,9 @@ thread_local! {
     pub(crate) static RECOVER_FAILS: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
 }
 
+/// r12 N2: a copy of the suite before a save stayed when the suite was deleted (inside
+/// `DeleteIncomplete`: deleting again removes the rest).
+pub const COPY_NOT_REMOVED: &str = "a copy of the suite could not be removed yet";
 /// A replace of the working copy could not be finished and its state before not be put back yet
 /// (translated by the app: restart the app, free some space).
 pub const REPLACE_UNFINISHED: &str = "an earlier opening of a suite file could not be finished";
@@ -934,11 +937,18 @@ impl GhulSuite {
     /// does not have are removed, the suite file is written last; if writing fails midway, the
     /// old copy is put back. The content files of GhulDocs move as whole folders: the old ones
     /// aside, the checked ones (`staged`) into place, the old ones removed at the end.
-    fn replace_working_copy(&self, files: &[(String, Vec<u8>)], staged: Option<&Staging>) -> Result<()> {
+    /// Returns the count of saves of all containers the new working copy goes with (r13 N2).
+    fn replace_working_copy(&self, files: &[(String, Vec<u8>)], staged: Option<&Staging>) -> Result<u64> {
         let _one = self.replace_lock.lock().unwrap_or_else(|e| e.into_inner());
         // An earlier replace that could not be finished: its state before first (M1 of round 5);
         // its copies must not be overwritten by this one.
         self.finish_earlier_replace_held()?;
+        // r13 N2: a call that read the working copy before does not open or write it after
+        // this (`set_open`, `write_journaled` compare the count).
+        let changes = {
+            let _two = self.save_lock.lock().unwrap_or_else(|e| e.into_inner());
+            self.protection_changes.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1
+        };
         let mut before = Vec::new();
         for n in self.storage.list()? {
             if n == SUITE_FILE || is_vault_file(&n) {
@@ -995,7 +1005,7 @@ impl GhulSuite {
         self.end_journal();
         drop(aside);
         self.purge_old_copies();
-        Ok(())
+        Ok(changes)
     }
 
     /// Tests: the rollback of a replace that failed fails as well (see [`ROLLBACK_FAILS`]).
@@ -1016,6 +1026,11 @@ impl GhulSuite {
     }
 
     fn finish_earlier_replace_held(&self) -> Result<()> {
+        // r10 N5: a save of all containers that failed or stopped in the middle comes first.
+        self.finish_earlier_save().map_err(|e| {
+            eprintln!("GhulSuite: the files before an unfinished save could not be put back: {e}");
+            GhulError::Storage { msg: super::suite::SAVE_UNFINISHED.into() }
+        })?;
         if !self.local_dir.join(REPLACE_JOURNAL).exists() {
             return Ok(());
         }
@@ -1039,6 +1054,9 @@ impl GhulSuite {
     pub(super) fn discard_journal(&self) {
         let _one = self.replace_lock.lock().unwrap_or_else(|e| e.into_inner());
         self.end_journal();
+        // r11 H1: the journal of a save of the suite before, and its copies, go as well.
+        let _two = self.save_lock.lock().unwrap_or_else(|e| e.into_inner());
+        let _ = self.end_save_journal();
     }
 
     fn end_journal(&self) {
@@ -1435,6 +1453,16 @@ impl GhulSuite {
                 }));
             };
             let header: ArchiveHeader = setting(&c, HEADER_KEY);
+            // r9 H1: readable with the keys of now, but a newer protection all the same: a new
+            // recovery code keeps the password key and the factor secret (only the container
+            // keys change). Overwriting it would bring the code before back.
+            if header.epoch > o.epoch() {
+                return Ok(ArchiveTargetInfo {
+                    target: ArchiveTarget::OtherProtection,
+                    device: header.device,
+                    time: header.time,
+                });
+            }
             let mine: StateRef = setting(&o.suite, STATE_KEY);
             // The file holds a state of this working copy's own line (also after a build that was
             // never written): overwriting it loses nothing.
@@ -1639,6 +1667,13 @@ impl GhulSuite {
         // 6, M1): its journal would put the deleted suite back over a new one.
         let _one = self.replace_lock.lock().unwrap_or_else(|e| e.into_inner());
         self.end_journal();
+        // r11 H1: and a save that did not end, with its copies of the suite before. r12 N3:
+        // a call that read the files before does not write or open them afterwards.
+        let copies_left = {
+            let _two = self.save_lock.lock().unwrap_or_else(|e| e.into_inner());
+            self.protection_changes.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            self.end_save_journal()
+        };
         self.lock();
         self.finish_lock();
         *self.built.lock().unwrap_or_else(|e| e.into_inner()) = None;
@@ -1675,10 +1710,19 @@ impl GhulSuite {
                 let n = e.file_name().to_string_lossy().into_owned();
                 let stem = n.trim_start_matches('.').trim_end_matches(".tmp").trim_end_matches(".bak");
                 let leftover = n.ends_with(".tmp") || n.ends_with(".bak");
-                if leftover && (stem == SUITE_FILE || is_vault_file(stem)) && e.file_type().is_ok_and(|t| t.is_file()) {
-                    let _ = std::fs::remove_file(e.path());
+                let prev = super::suite::is_prev_copy(&n);
+                if (prev || leftover && (stem == SUITE_FILE || is_vault_file(stem)))
+                    && e.file_type().is_ok_and(|t| t.is_file())
+                    && std::fs::remove_file(e.path()).is_err()
+                    && prev
+                {
+                    return Err(GhulError::Storage { msg: String::from(COPY_NOT_REMOVED) });
                 }
             }
+        }
+        // r12 N2: copies of the suite before that stayed make the deletion incomplete.
+        if copies_left {
+            return Err(GhulError::Storage { msg: String::from(COPY_NOT_REMOVED) });
         }
         Ok(())
     }
@@ -1729,7 +1773,7 @@ impl GhulSuite {
         // Refused before anything changes: the checked file stays for another try.
         let keep = |p: Pending, e: GhulError| -> Result<()> {
             let mut slot = self.pending.lock().unwrap_or_else(|e| e.into_inner());
-            if self.lock_gen_now() == gen && slot.is_none() {
+            if self.lock_gen_now().lock == gen.lock && slot.is_none() {
                 *slot = Some(p);
             }
             Err(e)
@@ -1776,13 +1820,15 @@ impl GhulSuite {
             self.wiped.store(true, std::sync::atomic::Ordering::SeqCst);
         }
         *self.built.lock().unwrap_or_else(|e| e.into_inner()) = None;
-        self.replace_working_copy(&p.files, p.staged.as_ref())?;
+        let changes = self.replace_working_copy(&p.files, p.staged.as_ref())?;
         let mut open = match (&p.recovery, p.keys) {
-            (Some((code, new_password)), _) => self.open_with_code(code.to_string(), new_password.to_string())?,
+            (Some((code, new_password)), _) => {
+                self.open_with_code(code.to_string(), new_password.to_string(), changes)?
+            }
             (None, Some((pk, s))) => {
                 let data = &p.files.iter().find(|(n, _)| n == SUITE_FILE).ok_or(GhulError::NoVault)?.1;
                 let suite = LockedContainer::parse(data)?.unlock(&pk, &s)?;
-                self.open_folder(pk, suite, true)?
+                self.open_folder(pk, suite, true, changes)?
             }
             _ => return Err(GhulError::NotFound),
         };

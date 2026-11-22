@@ -302,7 +302,7 @@ fun SecretTextField(
     val (digit, symbol) = passwordColors()
     OutlinedTextField(
         value = value,
-        onValueChange = onValueChange,
+        onValueChange = { UserActivity.touch(); onValueChange(it) },
         label = { Text(label) },
         singleLine = true,
         textStyle = if (visible) LocalTextStyle.current.copy(fontFamily = FontFamily.Monospace) else LocalTextStyle.current,
@@ -324,6 +324,44 @@ fun SecretTextField(
         },
         modifier = modifier,
     )
+}
+
+/**
+ * r10 M1: a recovery code typed in: visible (to compare with the sheet), but like a password for
+ * the keyboard (no learning, no suggestions, no autocorrect), capitals offered. What is typed
+ * stays as typed (the core normalises it), so the keyboard is not disturbed while composing.
+ */
+@Composable
+fun RecoveryCodeField(value: String, onValueChange: (String) -> Unit, label: String, modifier: Modifier = Modifier.fillMaxWidth(), minLines: Int = 1) {
+    OutlinedTextField(
+        value = value,
+        onValueChange = { UserActivity.touch(); onValueChange(it) },
+        label = { Text(label) },
+        minLines = minLines,
+        textStyle = LocalTextStyle.current.copy(fontFamily = FontFamily.Monospace),
+        keyboardOptions = KeyboardOptions(
+            keyboardType = KeyboardType.Password,
+            autoCorrectEnabled = false,
+            capitalization = androidx.compose.ui.text.input.KeyboardCapitalization.Characters,
+        ),
+        modifier = modifier,
+    )
+}
+
+/**
+ * r10 M3: the last input the app saw where the platform does not tell it (typing on the screen
+ * keyboard, touches in dialogs): for the idle lock.
+ */
+object UserActivity {
+    @kotlin.concurrent.Volatile
+    private var last: kotlin.time.TimeSource.Monotonic.ValueTimeMark? = null
+
+    fun touch() {
+        last = kotlin.time.TimeSource.Monotonic.markNow()
+    }
+
+    /** Milliseconds since the last input seen here; null: none yet. */
+    fun idleMillis(): Long? = last?.elapsedNow()?.inWholeMilliseconds
 }
 
 /** Search field (.search): 48 dp pill on the third surface, icon, no outline. */

@@ -3,7 +3,7 @@
 //! by `PinKeystore` (one use per key); the app's sequence around the core is the one in
 //! `PinKeystore::attempt`.
 
-use super::super::quick::{pin_tag, PIN_CLEANUP_FAILS, PIN_RULE, PIN_TAG_INFO};
+use super::super::quick::{pin_tag, PIN_CLEANUP_FAILS, PIN_RULE, PIN_TAG_INFO, PIN_TOO_SIMPLE};
 use super::super::suite::NOW_SHIFT_MS;
 use super::*;
 
@@ -39,6 +39,29 @@ fn the_app_pin_needs_eight_digits_and_both_factors() {
     for bad in ["1234567", "12345678a", "abcdefgh", "１２３４５６７８"] {
         let r = s.quick_unlock_enable_pin(kf_proof(PW, &kf), None, None, bad.into(), 3600, pin_keys());
         assert!(matches!(&r, Err(GhulError::InvalidInput { msg }) if msg == PIN_RULE), "{bad}: {r:?}");
+    }
+    // r9 dieb M2: the PINs a thief tries first.
+    for simple in [
+        "11111111",
+        "00000000",
+        "12121212",
+        "12341234",
+        "123123123",
+        "12345678",
+        "01234567",
+        "87654321",
+        "9876543210",
+        "24121990",
+        "12241990",
+        "19901224",
+        "01012000",
+        "31122099",
+    ] {
+        let r = s.quick_unlock_enable_pin(kf_proof(PW, &kf), None, None, simple.into(), 3600, pin_keys());
+        assert!(matches!(&r, Err(GhulError::InvalidInput { msg }) if msg == PIN_TOO_SIMPLE), "{simple}: {r:?}");
+    }
+    for fine in ["24681357", "13572468", "90693936", "12345679", "32131990", "112233445"] {
+        super::super::quick::check_pin(fine).unwrap_or_else(|e| panic!("{fine}: {e:?}"));
     }
     let r = s.quick_unlock_enable_pin(no_key_proof(PW), None, None, PIN.into(), 3600, pin_keys());
     assert!(matches!(r, Err(GhulError::KeyfileRequired)), "{r:?}");

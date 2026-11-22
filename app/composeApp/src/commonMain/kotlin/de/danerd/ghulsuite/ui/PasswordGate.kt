@@ -22,6 +22,26 @@ import org.jetbrains.compose.resources.stringResource
 // (auto-lock, lock on screen off, shake, screenshots, clipboard) or photograph a 2FA secret. These
 // steps ask for the master password first; nothing changes before it was checked by the core.
 
+/**
+ * r9 dieb M2: the core's rule for an app PIN that is too easy to guess (two tries are enough for
+ * it), checked here first: one digit or a block of up to four repeated (11111111, 12121212,
+ * 12341234), a run up or down (12345678, 87654321), or, with 8 digits, a date (DDMMYYYY,
+ * MMDDYYYY, YYYYMMDD, years 1900 to 2099).
+ */
+fun appPinTooSimple(pin: String): Boolean {
+    if (pin.isEmpty() || !pin.all { it in '0'..'9' }) return false
+    val d = pin.map { it - '0' }
+    val repeated = (1..4).any { n -> d.size % n == 0 && d.chunked(n).all { it == d.subList(0, n) } }
+    val run = listOf(1, -1).any { step -> d.zipWithNext().all { (a, b) -> b - a == step } }
+    fun num(from: Int, to: Int) = d.subList(from, to).fold(0) { a, x -> a * 10 + x }
+    fun date(day: Int, month: Int, year: Int) = day in 1..31 && month in 1..12 && year in 1900..2099
+    val dated = d.size == 8 && (date(num(0, 2), num(2, 4), num(4, 8)) || date(num(2, 4), num(0, 2), num(4, 8)) || date(num(6, 8), num(4, 6), num(0, 4)))
+    return repeated || run || dated
+}
+
+/** From this many at once (not into a trash), deleting asks for the master password (r9 dieb N7). */
+const val MANY_TO_DELETE = 10
+
 /** Whether a new auto-lock time protects less than [old] (longer). */
 fun autoLockWeakens(old: Int, new: Int): Boolean = new > old
 

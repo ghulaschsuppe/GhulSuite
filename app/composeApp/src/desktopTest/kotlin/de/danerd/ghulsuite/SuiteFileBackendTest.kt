@@ -244,6 +244,23 @@ class SuiteFileBackendTest {
         }
     }
 
+    /**
+     * r13 M1: the core's other errors keep their kind through the quick unlock's mapping (they
+     * used to become OTHER, which switched the fingerprint off after a full storage).
+     */
+    @Test
+    fun quickUnlockErrorsKeepTheirKind() {
+        for ((core, kind) in listOf(
+            de.danerd.ghulsuite.core.GhulException.Storage("disk") to de.danerd.ghulsuite.model.VaultErrorKind.STORAGE,
+            de.danerd.ghulsuite.core.GhulException.Locked() to de.danerd.ghulsuite.model.VaultErrorKind.LOCKED,
+            de.danerd.ghulsuite.core.GhulException.QuickUnlockInvalid() to de.danerd.ghulsuite.model.VaultErrorKind.QUICK_INVALID,
+        )) {
+            val e = assertFailsWith<de.danerd.ghulsuite.model.VaultException> { mappedQuickErrors<Unit> { throw core } }
+            assertEquals(kind, e.kind, core.toString())
+            if (kind != de.danerd.ghulsuite.model.VaultErrorKind.QUICK_INVALID) assertTrue(kind in de.danerd.ghulsuite.model.QUICK_UNLOCK_KEPT_ON)
+        }
+    }
+
     /** The core's error for an older quick unlock file becomes its own kind (its own message). */
     @Test
     fun anOutdatedQuickUnlockHasItsOwnKind() {

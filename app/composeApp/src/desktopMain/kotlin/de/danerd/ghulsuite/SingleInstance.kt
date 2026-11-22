@@ -135,7 +135,8 @@ object SingleInstance {
                         val input = java.io.BufferedInputStream(it.getInputStream())
                         val used = IntArray(1)
                         val deadline = System.currentTimeMillis() + 3000
-                        if (readLimitedLine(input, MAX_HANDOVER, used, deadline) == token) {
+                        val given = readLimitedLine(input, MAX_HANDOVER, used, deadline)
+                        if (given != null && java.security.MessageDigest.isEqual(given.toByteArray(), token.toByteArray())) {
                             val path = readLimitedLine(input, MAX_HANDOVER, used, deadline) ?: return@use
                             it.getOutputStream().apply { write('k'.code); flush() }
                             onStart(path.ifEmpty { null })
@@ -150,11 +151,25 @@ object SingleInstance {
      * A suite file or GhulDocs package from the command line (double click) for the app to open;
      * which of the two its name says (see SuiteFileSection and SetupScreen).
      */
-    fun open(path: String) {
+    fun open(path: String, handedOver: Boolean = false) {
+        // r9 N-3: a path handed over by another start (the token is on a stick that others may
+        // read) is never a network or device path: only touching it would send the user's
+        // Windows login (NTLM) to that server. The double click itself (the arguments) may.
+        if (handedOver && isRemoteOrDevicePath(path)) {
+            // r10 N1: said, not dropped silently.
+            AppLaunch.refusedPath.value = path
+            return
+        }
         val f = File(path)
         // Read as a stream when it is opened; the core counts the size itself.
         if (!f.isFile) return
         AppLaunch.suiteFile.value = PickedSuiteFile(SuiteFileRef(f.absolutePath, f.name))
+    }
+
+    /** A UNC path (`\\server\share`, `//server/share`) or a device path (`\\?\`, `\\.\`). */
+    fun isRemoteOrDevicePath(path: String): Boolean {
+        val p = path.trim()
+        return p.startsWith("\\\\") || p.startsWith("//") || p.startsWith("\\/") || p.startsWith("/\\")
     }
 
     /** The suite file (`.ghlzip`) or GhulDocs package (`.ghldocs`) among the program's arguments. */

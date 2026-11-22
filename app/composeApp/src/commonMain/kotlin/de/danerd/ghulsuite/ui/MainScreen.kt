@@ -214,6 +214,25 @@ private fun MainScreen(state: AppState, wide: Boolean, width: Dp) {
     // A new recovery code cannot be skipped: it must be confirmed first.
     PlatformBackHandler(enabled = top != null && top !is Screen.RecoveryCode) { state.back() }
     UpdateDialog(state)
+    if (state.saveDialog == null && !state.recoveredGuide) state.saveTargetOffer?.let { ref ->
+        AlertDialog(
+            onDismissRequest = { state.saveTargetOffer = null },
+            title = { Text(ref.name) },
+            text = { Text(stringResource(Res.string.file_offer_place)) },
+            confirmButton = {
+                TextButton(onClick = {
+                    state.saveTargetOffer = null
+                    if (state.backend.keepAccess(ref)) state.backend.setSuiteFile(ref) else state.messageRes(Res.string.file_offer_no_access)
+                }, modifier = Modifier.testTag("offer-keep")) { Text(stringResource(Res.string.file_offer_yes)) }
+            },
+            dismissButton = { TextButton(onClick = { state.saveTargetOffer = null }) { Text(stringResource(Res.string.file_offer_no)) } },
+        )
+    }
+    // r11 M2: an editor with unsaved input defers the idle lock, but not for good: said in time.
+    val idleWarningText = stringResource(Res.string.idle_lock_warning)
+    androidx.compose.runtime.LaunchedEffect(state.idleWarning) {
+        if (state.idleWarning) state.snackbar.showSnackbar(idleWarningText, duration = androidx.compose.material3.SnackbarDuration.Long)
+    }
     state.archiveAsk?.let { item ->
         AlertDialog(
             onDismissRequest = { state.archiveAsk = null },
@@ -243,7 +262,7 @@ private fun MainScreen(state: AppState, wide: Boolean, width: Dp) {
             dismissButton = { TextButton(onClick = { state.recoveredGuide = false }) { Text(stringResource(Res.string.a_later)) } },
         )
     }
-    state.deleteAsk?.let { ask ->
+    state.deleteAsk?.takeIf { it.trash || it.names.size < MANY_TO_DELETE }?.let { ask ->
         val one = ask.names.singleOrNull()
         AlertDialog(
             danger = true,
@@ -262,6 +281,18 @@ private fun MainScreen(state: AppState, wide: Boolean, width: Dp) {
             },
             dismissButton = { TextButton(onClick = { state.deleteAsk = null }) { Text(stringResource(Res.string.a_cancel)) } },
         )
+    }
+    // r9 dieb N7: many entries at once (not into a trash) only with the master password.
+    state.deleteAsk?.takeIf { !it.trash && it.names.size >= MANY_TO_DELETE }?.let { ask ->
+        PasswordGateDialog(
+            state, stringResource(Res.string.ask_delete_title),
+            pluralStringResource(Res.plurals.ask_delete_n, ask.names.size, ask.names.size.toString()),
+            confirmLabel = stringResource(Res.string.a_delete),
+            onDismiss = { state.deleteAsk = null },
+        ) {
+            state.deleteAsk = null
+            ask.action()
+        }
     }
     if (state.confirmDiscard) {
         AlertDialog(

@@ -78,7 +78,11 @@ actual fun rememberSaveFile(onSaved: (de.danerd.ghulsuite.ui.SaveFileResult) -> 
             // M8: a failed write says so (a full storage with its own text).
             val result = withContext(Dispatchers.IO) {
                 try {
-                    if (context.contentResolver.openOutputStream(uri, "wt")?.use { it.write(data) } != null) {
+                    // r9 krypto N6: read back before it counts (a cloud provider may take the
+                    // bytes and fail later; a key file that is not really there locks out).
+                    if (context.contentResolver.openOutputStream(uri, "wt")?.use { it.write(data) } != null &&
+                        context.contentResolver.openInputStream(uri)?.use { it.readBytes() }?.contentEquals(data) == true
+                    ) {
                         de.danerd.ghulsuite.ui.SaveFileResult.SAVED
                     } else {
                         de.danerd.ghulsuite.ui.SaveFileResult.FAILED

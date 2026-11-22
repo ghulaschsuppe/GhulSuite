@@ -453,6 +453,7 @@ private fun SetAppPinDialog(state: AppState, hours: Int, onDismiss: () -> Unit) 
     var validity by remember { mutableStateOf(hours) }
     var error by remember { mutableStateOf<String?>(null) }
     val mismatch = stringResource(Res.string.set_pin_mismatch)
+    val pinSimple = stringResource(Res.string.pin_too_simple)
     AlertDialog(
         onDismissRequest = { if (!state.busy) onDismiss() },
         title = { Text(stringResource(Res.string.set_quick_pin)) },
@@ -472,6 +473,8 @@ private fun SetAppPinDialog(state: AppState, hours: Int, onDismiss: () -> Unit) 
             TextButton(onClick = {
                 if (pin != repeat) {
                     error = mismatch
+                } else if (appPinTooSimple(pin)) {
+                    error = pinSimple
                 } else {
                     state.run(onError = { error = it }, block = { state.backend.enablePinUnlock(proof.proof(), pin, validity, state.onTouchNeeded) }) {
                         proof.clear()
@@ -652,6 +655,10 @@ private fun AboutSection(state: AppState) {
         append(backend.crashReport() ?: "-")
     }
     UpdateSection(state)
+    // r9 dieb M1: the portable version and its program are on the stick (whoever had it could change them).
+    if (backend.openCopiesOnThisPc) {
+        SectionCard(stringResource(Res.string.about_portable_title)) { Hint(stringResource(Res.string.about_portable_stick)) }
+    }
     // Author (AGPL-3.0 section 7(b): this notice must stay visible in modified versions too).
     SectionCard {
         Text(stringResource(Res.string.about_made_by), fontWeight = androidx.compose.ui.text.font.FontWeight.Bold, fontSize = 16.sp)
@@ -741,6 +748,19 @@ private fun UpdateSection(state: AppState) {
     }
 }
 
+/**
+ * The release notes as the update dialog shows them (r9 lieferkette N4): plain lines only (no
+ * control or direction characters, no markup links), at most [RELEASE_NOTES_MAX] characters.
+ */
+fun releaseNotesShown(notes: String): String {
+    val plain = notes.replace(Regex("\\[([^\\]]*)]\\([^)]*\\)"), "$1")
+        .filter { it == '\n' || (!it.isISOControl() && it !in '\u202A'..'\u202E' && it !in '\u2066'..'\u2069' && it != '\u200E' && it != '\u200F') }
+        .lines().map { it.trimEnd() }.filter { it.isNotEmpty() }.joinToString("\n")
+    return if (plain.length <= RELEASE_NOTES_MAX) plain else plain.take(RELEASE_NOTES_MAX).trimEnd() + " …"
+}
+
+const val RELEASE_NOTES_MAX = 1500
+
 /** "Version X is available" after a check: install, or later. */
 @Composable
 fun UpdateDialog(state: AppState) {
@@ -753,8 +773,12 @@ fun UpdateDialog(state: AppState) {
             // The sheet of the dialog scrolls long release notes itself.
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(stringResource(if (up.installs) Res.string.upd_text else Res.string.upd_text_portable, formatSize(u.size)))
-                if (u.notes.isNotBlank()) {
-                    Text(u.notes.take(3000), fontSize = 13.sp, color = g.muted)
+                // r9 lieferkette N4: the notes come from the titles of the changes (anyone's pull
+                // request): shown as quoted text under a note, never as instructions of the app.
+                val notes = releaseNotesShown(u.notes)
+                if (notes.isNotEmpty()) {
+                    Text(stringResource(Res.string.upd_notes_caption), fontSize = 12.sp, color = g.muted)
+                    Text(notes, fontSize = 13.sp, color = g.muted)
                 }
             }
         },

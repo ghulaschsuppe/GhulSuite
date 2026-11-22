@@ -434,19 +434,16 @@ fun DocsScreen(state: AppState, padding: PaddingValues) {
     }
     sharing?.let { (v, ids) -> ShareAsVaultDialog(state, v, ids, docs = true) { sharing = null } }
     if (emptyTrash) {
-        AlertDialog(
-            danger = true,
-            onDismissRequest = { emptyTrash = false },
-            title = { Text(stringResource(Res.string.docs_empty_trash_title)) },
-            text = { Text(stringResource(Res.string.docs_empty_trash_text)) },
-            confirmButton = {
-                TextButton(onClick = {
-                    emptyTrash = false
-                    state.run(onError = { error = it }, block = { docs.emptyTrash(vault) }) { state.changed() }
-                }, modifier = Modifier.testTag("ask-confirm")) { Text(stringResource(Res.string.docs_delete_forever)) }
-            },
-            dismissButton = { TextButton(onClick = { emptyTrash = false }) { Text(stringResource(Res.string.a_cancel)) } },
-        )
+        // r9 dieb N7: deleting for good needs the master password (someone with the app open for a
+        // moment must not wipe the documents and then save over the suite file).
+        PasswordGateDialog(
+            state, stringResource(Res.string.docs_empty_trash_title), stringResource(Res.string.docs_empty_trash_text),
+            confirmLabel = stringResource(Res.string.docs_delete_forever),
+            onDismiss = { emptyTrash = false },
+        ) {
+            emptyTrash = false
+            state.run(onError = { error = it }, block = { docs.emptyTrash(vault) }) { state.changed() }
+        }
     }
     // Files shared from another app: where they go is chosen here.
     state.docsIncoming?.let { files ->
@@ -748,19 +745,16 @@ fun DocsSettingsSection(state: AppState) {
         }
     }
     if (emptyTrash) {
-        AlertDialog(
-            danger = true,
-            onDismissRequest = { emptyTrash = false },
-            title = { Text(stringResource(Res.string.docs_empty_trash_title)) },
-            text = { Text(stringResource(Res.string.docs_empty_trash_text)) },
-            confirmButton = {
-                TextButton(onClick = {
-                    emptyTrash = false
-                    state.run(onError = { error = it }, block = { docs.emptyTrash(null) }) { state.changed() }
-                }, modifier = Modifier.testTag("ask-confirm")) { Text(stringResource(Res.string.docs_delete_forever)) }
-            },
-            dismissButton = { TextButton(onClick = { emptyTrash = false }) { Text(stringResource(Res.string.a_cancel)) } },
-        )
+        // r9 dieb N7: deleting for good needs the master password (someone with the app open for a
+        // moment must not wipe the documents and then save over the suite file).
+        PasswordGateDialog(
+            state, stringResource(Res.string.docs_empty_trash_title), stringResource(Res.string.docs_empty_trash_text),
+            confirmLabel = stringResource(Res.string.docs_delete_forever),
+            onDismiss = { emptyTrash = false },
+        ) {
+            emptyTrash = false
+            state.run(onError = { error = it }, block = { docs.emptyTrash(null) }) { state.changed() }
+        }
     }
 }
 

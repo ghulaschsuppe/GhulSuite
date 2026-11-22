@@ -360,6 +360,10 @@ Bisher gibt es **nur Vorabversionen**; eine stabile Version gibt es noch nicht.
 | **Windows, Installer** | `GhulSuite.msi` auf der [Release-Seite](https://github.com/ghulaschsuppe/GhulSuite/releases) |
 | **Windows, portabel** (USB-Stick) | `GhulSuite-portable.zip` auf der [Release-Seite](https://github.com/ghulaschsuppe/GhulSuite/releases) |
 
+> **Portabel heißt: auch das Programm liegt auf dem Stick.** Wer den Stick eine Weile hatte, kann es austauschen und
+> beim nächsten Entsperren mitlesen. Einen Stick, der aus der Hand war, nicht mehr starten, sondern die portable
+> Version neu laden und die Prüfsumme prüfen (`sha256sum -c SHA256SUMS`).
+
 - **Vorabversionen** (z. B. `0.5.0-dev.12`) entstehen automatisch aus dem Zweig `dev` und sind auf der
   Release-Seite als „Pre-release“ markiert. Stabile Versionen kommen später vom Zweig `main`.
 - **Updates kommen aus der App:** Optionen → Über und Hilfe → Updates. Einmal am Tag nach dem Entsperren schaut GhulSuite nach

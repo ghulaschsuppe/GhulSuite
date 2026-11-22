@@ -42,10 +42,13 @@ pub(crate) const ATTESTATION_WITH_TRANSPORT: u32 = 3;
 /// M21: whether a credential Windows just registered may be a GhulSuite security key: one over
 /// USB or NFC. A phone (hybrid), Bluetooth, a built-in authenticator or no transport at all is
 /// refused. Before attestation version 3 Windows does not name the transport (and knows no
-/// hybrid either): allowed.
+/// hybrid either): allowed. r9 N7: exactly one of the two (Windows names one transport; a mix
+/// such as USB | hybrid is refused).
 #[cfg_attr(not(windows), allow(dead_code))]
 pub(crate) fn transport_allowed(attestation_version: u32, used_transport: u32) -> bool {
-    attestation_version < ATTESTATION_WITH_TRANSPORT || used_transport & (TRANSPORT_USB | TRANSPORT_NFC) != 0
+    attestation_version < ATTESTATION_WITH_TRANSPORT
+        || used_transport == TRANSPORT_USB
+        || used_transport == TRANSPORT_NFC
 }
 
 #[cfg(windows)]
@@ -330,11 +333,12 @@ mod imp {
                 pwszHashAlgId: WEBAUTHN_HASH_ALGORITHM_SHA_256,
             };
             let mut enable: BOOL = 1;
-            // credProtect 3: the key uses the credential only after PIN verification. Not
-            // required, so keys without the extension still work.
+            // credProtect 3: the key uses the credential only after PIN verification. r9 M1:
+            // required (Windows does not say the key's CTAP version here), so an old key of
+            // CTAP 2.0 that would answer without the PIN is refused (NTE_NOT_SUPPORTED).
             let mut protect = WEBAUTHN_CRED_PROTECT_EXTENSION_IN {
                 dwCredProtect: WEBAUTHN_USER_VERIFICATION_REQUIRED,
-                bRequireCredProtect: 0,
+                bRequireCredProtect: 1,
             };
             let mut ext = [
                 WEBAUTHN_EXTENSION {
@@ -562,6 +566,7 @@ mod tests {
             protocols: vec![2],
             fido_2_1: true,
             pin: None,
+            cred_protect: true,
         });
         assert!(!is_platform(usb.as_ref()));
         assert!(t.write_report(vec![0; 64]).is_err());
@@ -585,10 +590,19 @@ mod transport_tests {
             assert!(transport_allowed(v, TRANSPORT_HYBRID), "version {v}");
         }
         for v in [3, 4, 6, 8] {
-            for t in [TRANSPORT_USB, TRANSPORT_NFC, TRANSPORT_USB | TRANSPORT_NFC] {
+            for t in [TRANSPORT_USB, TRANSPORT_NFC] {
                 assert!(transport_allowed(v, t), "version {v}, transport {t:#x}");
             }
-            for t in [TRANSPORT_HYBRID, TRANSPORT_BLE, TRANSPORT_INTERNAL, TRANSPORT_TEST, 0] {
+            for t in [
+                TRANSPORT_HYBRID,
+                TRANSPORT_BLE,
+                TRANSPORT_INTERNAL,
+                TRANSPORT_TEST,
+                0,
+                TRANSPORT_USB | TRANSPORT_NFC,
+                TRANSPORT_USB | TRANSPORT_HYBRID,
+                TRANSPORT_NFC | TRANSPORT_BLE,
+            ] {
                 assert!(!transport_allowed(v, t), "version {v}, transport {t:#x}");
             }
         }

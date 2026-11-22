@@ -368,7 +368,12 @@ fn end_to_end_with_ctap2_authenticator() {
     use crate::ctaphid::CtapHid;
     use crate::mock::{MockAuthenticator, MockConfig};
 
-    let key = MockAuthenticator::new(MockConfig { protocols: vec![2, 1], fido_2_1: true, pin: Some("1234".into()) });
+    let key = MockAuthenticator::new(MockConfig {
+        protocols: vec![2, 1],
+        fido_2_1: true,
+        pin: Some("1234".into()),
+        cred_protect: true,
+    });
     let mut r = rng(8);
     let keys = SuiteKeys::create("pw", COST, &mut r).unwrap();
 
@@ -639,5 +644,10 @@ fn a_key_derivation_beyond_what_the_app_uses_is_refused_at_once() {
     assert!(matches!(super::keys::PasswordKey::derive("pw", &kdf), Err(super::VaultError::Format(_))));
     let kdf = KdfParams { memory_kib: DERIVE_MAX_MEMORY_KIB + 1024, ..kdf };
     assert!(super::keys::PasswordKey::derive("pw", &kdf).is_err());
+    // r9 N8: the memory the app uses, but far more iterations: refused as well.
+    let kdf = KdfParams { memory_kib: 64 * 1024, iterations: 25, ..kdf };
+    assert!(matches!(super::keys::PasswordKey::derive("pw", &kdf), Err(super::VaultError::Format(_))));
+    let kdf = KdfParams { memory_kib: DERIVE_MAX_MEMORY_KIB, iterations: 4, ..kdf };
+    assert!(matches!(super::keys::PasswordKey::derive("pw", &kdf), Err(super::VaultError::Format(_))));
     assert!(started.elapsed() < std::time::Duration::from_secs(1), "nothing was derived");
 }
