@@ -125,14 +125,16 @@ private fun DocViewHeader(state: AppState, item: DocsItemUi?) {
     val docs = state.backend.docs
     /** The document whose export waits for the system's save dialog. */
     val exporting = remember { arrayOfNulls<DocsItemUi>(1) }
-    val create = rememberCreateStream { sink: ByteSink? ->
+    val create = rememberCreateStream(onFailed = { state.reportSaveFile(SaveFileResult.FAILED) }) { sink: ByteSink? ->
         val x = exporting[0]
         exporting[0] = null
         if (sink == null) return@rememberCreateStream
         if (x == null) {
-            // Nothing to write into the file just made: no empty file is left behind.
+            // Nothing to write into the file just made (recreated while the dialog was open): no
+            // empty file is left behind, and it is said.
             runCatching { sink.close() }
             runCatching { sink.discard() }
+            state.reportSaveFile(SaveFileResult.FAILED)
             return@rememberCreateStream
         }
         state.exportDoc(x, sink)
@@ -328,13 +330,14 @@ private fun DocBody(state: AppState, item: DocsItemUi) {
 private fun ViewerActions(state: AppState, item: DocsItemUi) {
     var askExport by remember { mutableStateOf(false) }
     val exporting = remember { arrayOfNulls<DocsItemUi>(1) }
-    val create = rememberCreateStream { sink: ByteSink? ->
+    val create = rememberCreateStream(onFailed = { state.reportSaveFile(SaveFileResult.FAILED) }) { sink: ByteSink? ->
         val x = exporting[0]
         exporting[0] = null
         if (sink == null) return@rememberCreateStream
         if (x == null) {
             runCatching { sink.close() }
             runCatching { sink.discard() }
+            state.reportSaveFile(SaveFileResult.FAILED)
             return@rememberCreateStream
         }
         state.exportDoc(x, sink)

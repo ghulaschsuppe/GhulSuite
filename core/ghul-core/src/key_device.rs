@@ -18,6 +18,48 @@ use zeroize::Zeroizing;
 use crate::ctap2::{Authenticator, Credential};
 use crate::{FidoError, HidTransport, TransportError};
 
+/// The message when Windows registered the new credential on another kind of device than a
+/// security key over USB or NFC (a phone, Bluetooth; M21). Translated by the app.
+pub const ONLY_USB_OR_NFC: &str = "only a security key over USB or NFC can be registered";
+
+/// Transports Windows names for a new credential (`WEBAUTHN_CTAP_TRANSPORT_*` of webauthn.h).
+#[cfg_attr(not(windows), allow(dead_code))]
+pub(crate) const TRANSPORT_USB: u32 = 0x01;
+#[cfg_attr(not(windows), allow(dead_code))]
+pub(crate) const TRANSPORT_NFC: u32 = 0x02;
+#[cfg(any(test, windows))]
+pub(crate) const TRANSPORT_BLE: u32 = 0x04;
+#[cfg(any(test, windows))]
+pub(crate) const TRANSPORT_TEST: u32 = 0x08;
+#[cfg(any(test, windows))]
+pub(crate) const TRANSPORT_INTERNAL: u32 = 0x10;
+#[cfg(any(test, windows))]
+pub(crate) const TRANSPORT_HYBRID: u32 = 0x20;
+/// The version of `WEBAUTHN_CREDENTIAL_ATTESTATION` from which Windows names the transport.
+#[cfg_attr(not(windows), allow(dead_code))]
+pub(crate) const ATTESTATION_WITH_TRANSPORT: u32 = 3;
+
+/// M21: whether a credential Windows just registered may be a GhulSuite security key: one over
+/// USB or NFC. A phone (hybrid), Bluetooth, a built-in authenticator or no transport at all is
+/// refused. Before attestation version 3 Windows does not name the transport (and knows no
+/// hybrid either): allowed.
+#[cfg_attr(not(windows), allow(dead_code))]
+pub(crate) fn transport_allowed(attestation_version: u32, used_transport: u32) -> bool {
+    attestation_version < ATTESTATION_WITH_TRANSPORT || used_transport & (TRANSPORT_USB | TRANSPORT_NFC) != 0
+}
+
+#[cfg(windows)]
+const _: () = {
+    use windows_sys::Win32::Networking::WindowsWebServices as w;
+    assert!(TRANSPORT_USB == w::WEBAUTHN_CTAP_TRANSPORT_USB);
+    assert!(TRANSPORT_NFC == w::WEBAUTHN_CTAP_TRANSPORT_NFC);
+    assert!(TRANSPORT_BLE == w::WEBAUTHN_CTAP_TRANSPORT_BLE);
+    assert!(TRANSPORT_TEST == w::WEBAUTHN_CTAP_TRANSPORT_TEST);
+    assert!(TRANSPORT_INTERNAL == w::WEBAUTHN_CTAP_TRANSPORT_INTERNAL);
+    assert!(TRANSPORT_HYBRID == w::WEBAUTHN_CTAP_TRANSPORT_HYBRID);
+    assert!(ATTESTATION_WITH_TRANSPORT == w::WEBAUTHN_CREDENTIAL_ATTESTATION_VERSION_3);
+};
+
 /// One credential to try, with the salt for its slot.
 pub(crate) struct CredRequest<'a> {
     pub rp_id: &'a str,
@@ -339,6 +381,15 @@ mod imp {
             // Copy what we need, then free the API's buffer.
             let result = unsafe {
                 let a = &*att;
+                // M21: "cross-platform" also lets Windows 11 offer a phone (hybrid, a passkey that
+                // may be synchronised into a cloud) or a Bluetooth device. Only a security key
+                // plugged in or held to the reader counts; anything else is refused (the
+                // credential made on that device stays unused). Before attestation version 3
+                // Windows does not say, and knows no hybrid either.
+                if !super::transport_allowed(a.dwVersion, a.dwUsedTransport) {
+                    WebAuthNFreeCredentialAttestation(att);
+                    return Err(FidoError::InvalidInput { msg: ONLY_USB_OR_NFC.into() });
+                }
                 let id = std::slice::from_raw_parts(a.pbCredentialId, a.cbCredentialId as usize).to_vec();
                 let mut hmac = false;
                 for i in 0..a.Extensions.cExtensions as usize {
@@ -518,6 +569,28 @@ mod tests {
         {
             assert!(!platform_security_key_available());
             assert!(platform_device().is_err());
+        }
+    }
+}
+
+#[cfg(test)]
+mod transport_tests {
+    use super::*;
+
+    /// M21: only USB or NFC from attestation version 3 on; before, Windows does not say.
+    #[test]
+    fn only_usb_or_nfc_keys_are_registered() {
+        for v in [0, 1, 2] {
+            assert!(transport_allowed(v, 0), "version {v}");
+            assert!(transport_allowed(v, TRANSPORT_HYBRID), "version {v}");
+        }
+        for v in [3, 4, 6, 8] {
+            for t in [TRANSPORT_USB, TRANSPORT_NFC, TRANSPORT_USB | TRANSPORT_NFC] {
+                assert!(transport_allowed(v, t), "version {v}, transport {t:#x}");
+            }
+            for t in [TRANSPORT_HYBRID, TRANSPORT_BLE, TRANSPORT_INTERNAL, TRANSPORT_TEST, 0] {
+                assert!(!transport_allowed(v, t), "version {v}, transport {t:#x}");
+            }
         }
     }
 }

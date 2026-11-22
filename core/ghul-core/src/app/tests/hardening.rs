@@ -938,3 +938,60 @@ fn a_journal_finds_its_old_documents_by_name() {
     let r = s.unlock(PW.into(), None, None, None, Some(kf));
     assert!(matches!(&r, Err(GhulError::Storage { msg }) if msg == super::super::archive::REPLACE_UNFINISHED), "{r:?}");
 }
+
+/// A storage whose deleting fails while `armed` (a file held by another program).
+struct FailDelete {
+    inner: Arc<dyn VaultStorage>,
+    armed: std::sync::atomic::AtomicBool,
+}
+
+impl VaultStorage for FailDelete {
+    fn read(&self, name: String) -> Result<Option<Vec<u8>>, super::super::storage::StorageError> {
+        self.inner.read(name)
+    }
+    fn write(&self, name: String, data: Vec<u8>) -> Result<(), super::super::storage::StorageError> {
+        self.inner.write(name, data)
+    }
+    fn delete(&self, name: String) -> Result<(), super::super::storage::StorageError> {
+        if self.armed.load(std::sync::atomic::Ordering::SeqCst) {
+            return Err(super::super::storage::StorageError::Io { msg: "in use".into() });
+        }
+        self.inner.delete(name)
+    }
+    fn list(&self) -> Result<Vec<String>, super::super::storage::StorageError> {
+        self.inner.list()
+    }
+    fn describe(&self) -> String {
+        self.inner.describe()
+    }
+    fn content_dir(&self) -> Option<String> {
+        self.inner.content_dir()
+    }
+}
+
+/// M8: removing a vault whose file cannot be deleted changes nothing: it stays listed and goes
+/// into the next suite file, as on the disk.
+#[test]
+fn a_vault_whose_file_cannot_be_removed_stays() {
+    let (d, s, kf, _) = keyfile_suite("remove-vault-fails");
+    s.create_vault(VaultKind::Pass, "Zweiter".into()).unwrap();
+    s.lock();
+    let flaky = Arc::new(FailDelete { inner: d.storage(), armed: std::sync::atomic::AtomicBool::new(false) });
+    let s = GhulSuite::new(flaky.clone(), d.local());
+    s.unlock(PW.into(), None, None, None, Some(kf.clone())).unwrap();
+    let id = vault_id(&s, "Zweiter");
+    flaky.armed.store(true, std::sync::atomic::Ordering::SeqCst);
+    let r = s.remove_vault(id.clone());
+    assert!(matches!(&r, Err(GhulError::Storage { msg }) if msg == super::super::suite::VAULT_NOT_REMOVED), "{r:?}");
+    assert!(s.list_vaults().unwrap().iter().any(|v| v.id == id), "still listed");
+    let built = s.archive_build_bytes("Test".into()).unwrap();
+    let names: Vec<String> = {
+        let mut z = zip::ZipArchive::new(std::io::Cursor::new(built.data)).unwrap();
+        (0..z.len()).map(|i| z.by_index(i).unwrap().name().unwrap().to_string()).collect()
+    };
+    let file = s.list_vaults().unwrap().into_iter().find(|v| v.id == id).unwrap().file;
+    assert!(names.contains(&file), "in the next suite file: {names:?}");
+    flaky.armed.store(false, std::sync::atomic::Ordering::SeqCst);
+    s.remove_vault(id.clone()).unwrap();
+    assert!(!s.list_vaults().unwrap().iter().any(|v| v.id == id));
+}

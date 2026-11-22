@@ -122,7 +122,7 @@ Nach Bereich zusammengefasst; die Nummern führen ins [Testprotokoll](TESTPROTOK
 
 ## 4. Offen
 
-**Aus der Großprüfung (21. und 22.11.2026) offen:** GP-H11 zum Teil, GP-M8, GP-M21, GP-M44 und die Restrisiken in
+**Aus der Großprüfung (21. und 22.11.2026) offen:** GP-H11 zum Teil, GP-M44 und die Restrisiken in
 4.6; Einzelheiten im [Testprotokoll](TESTPROTOKOLL.md), Abschnitt 12.
 
 Aus den Testrunden und Audits bis 16.11.2026 ist **nichts mehr offen**. Von den 146 offenen Befunden der letzten

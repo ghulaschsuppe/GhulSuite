@@ -315,15 +315,21 @@ fun ShareAsVaultDialog(state: AppState, vaultId: String, ids: List<String>, docs
     val mismatch = stringResource(Res.string.setup_pw_mismatch)
     // A GhulDocs vault is written as a stream into the file chosen first (it can be large): its
     // file is there before the code is shown, so there is no last step "save the vault file".
-    val saveKeyfile = rememberSaveFile { ok -> if (ok) step = if (docs) 3 else 2 else error = notSaved }
-    val saveVault = rememberSaveFile { ok -> if (ok) step = 3 else error = notSaved }
+    val failText = rememberSaveFileFailedText()
+    val saveKeyfile = rememberSaveFile { r -> if (r == SaveFileResult.SAVED) step = if (docs) 3 else 2 else error = failText(r) ?: notSaved }
+    val saveVault = rememberSaveFile { r -> if (r == SaveFileResult.SAVED) step = 3 else error = failText(r) ?: notSaved }
     /** What "Create" handed over, waiting for the place of the GhulDocs vault's file. */
     val docsShare = remember { arrayOfNulls<Pair<ShareVaultUi, String?>>(1) }
-    val createDocsFile = rememberCreateStream { sink ->
+    val createDocsFile = rememberCreateStream(onFailed = { error = failText(SaveFileResult.FAILED) }) { sink ->
         val pending = docsShare[0]
         docsShare[0] = null
         if (sink == null || pending == null) {
-            sink?.let { runCatching { it.close() }; runCatching { it.discard() } }
+            sink?.let {
+                runCatching { it.close() }
+                runCatching { it.discard() }
+                // Recreated while the dialog was open: what to write is gone (said, not hidden).
+                error = failText(SaveFileResult.FAILED)
+            }
             return@rememberCreateStream
         }
         val (share, keyPin) = pending

@@ -87,7 +87,7 @@ Rohberichte und die Auswertung liegen nicht im Repository; die Funde mit Nummer,
 | KI, 5 Agenten | **Runde 5:** zwei prüfen die behobenen Schwächen (Kern und CI, App), drei das ganze Projekt (Nutzer über Monate, Angreifer, Robustheit und Wartbarkeit) | 6 hoch (u. a. Schnell-Entsperren im Assistenten scheiterte immer und verbrauchte PIN-Versuche des Keys; der Schutz des Schlüssels hing an Einstellungen außerhalb des Repositorys; nach dem Merge nach `main` entstand keine stabile Version), 21 mittel, 38 klein (teils doppelt); behoben bis auf die unten genannten | Testprotokoll 12 |
 | KI, 1 Agent | **Schlussprüfung (r6)** nur der Änderungen aus Runde 5 | kein Fund hoch; 4 mittel (Löschen ließ ein Ersetzungs-Journal liegen, das eine neue Suite hätte überschreiben können; Marke mit absolutem Pfad; Prüfung des Gradle-Wrappers verhinderte den Gradle-Lauf nicht; Ausweich-Anker beim Entsperren), 7 klein; alle behoben, der Punkt „Dokumentation veraltet“ mit diesem Nachtrag | Testprotokoll 12 |
 | Inhaber | Entscheidungen | Schlüssel bleiben (nur in Environments), keine externe Prüfung, kein Testserver | Abschnitt 1 |
-| Lokal | Vollständiger Precheck (22.11.2026) | grün: Kern 303 Tests bestanden, 7 ignoriert; Desktop 158 Tests und 20 in `desktopAppBindingTest`. Windows (Clippy, Build, Tests) und der Emulator laufen nur in der CI | Testprotokoll 1 |
+| Lokal | Vollständiger Precheck (22.11.2026) | grün: Kern 305 Tests bestanden, 7 ignoriert; Desktop 159 Tests und 20 in `desktopAppBindingTest`. Windows (Clippy, Build, Tests) und der Emulator laufen nur in der CI | Testprotokoll 1 |
 
 **Behoben** (Einzelheiten im Testprotokoll, Abschnitt 12): 12 der 13 hohen Funde ganz, H11 zum Teil (ehrlicher Dialog
 und ein Weg über „Als Tresor weitergeben“, kein Zusammenführen); von den mittleren alle bis auf die unten genannten
@@ -97,9 +97,9 @@ und ein Weg über „Als Tresor weitergeben“, kein Zusammenführen); von den m
 - Die Environments und Secrets richtet der Inhaber in GitHub ein (Environments `signing`, `release`, `website`,
   Repository-Variable `GHUL_UPDATE_KEY`, danach die Secrets auf Repository-Ebene löschen). Bis dahin meldet der Job
   `secrets-check` auf `main` und `dev` einen Fehler, und der Schutz aus H1 wirkt noch nicht.
-- M8 (Tresor entfernen im Fehlerfall nur halb rückgängig; gescheiterte Exporte melden nichts), M21 (unter Windows
-  vermutlich ein Handy-Passkey als „Security Key“), M44 (Android-Code ohne Unit-Tests) und die übrigen kleinen
-  Punkte, soweit nicht im Testprotokoll als behoben genannt.
+- M44 (Android-Code ohne Unit-Tests) und die übrigen kleinen Punkte, soweit nicht im Testprotokoll als behoben
+  genannt. M8 und M21 wurden am 22.11.2026 nachträglich behoben; M21 (nur USB oder NFC unter Windows) ist erst
+  in der Windows-CI gebaut und muss auf einem echten Windows-11-Gerät mit Handy nachgeprüft werden.
 - Restrisiken (AUDIT 4.6): das MSI-Update ist nur als Text des Skripts getestet (M24); Windows und Emulator laufen
   nur in der CI; die App-PIN ist mit Root offline angreifbar (M19); Erinnerungen mit „Alles“ (M12, M18).
 - Festgehaltene Tests auf echten Geräten (Testplan, besonders E19e und Abschnitt 40) und eine Beta mit Leuten aus der

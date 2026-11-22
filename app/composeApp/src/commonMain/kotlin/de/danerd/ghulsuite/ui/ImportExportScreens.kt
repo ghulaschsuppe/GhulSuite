@@ -214,7 +214,7 @@ fun ExportScreen(state: AppState, padding: PaddingValues) {
     var spreadsheetSafe by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     val saved = stringResource(Res.string.msg_exported_plain)
-    val save = rememberSaveFile { ok -> if (ok) state.message(saved) }
+    val save = rememberSaveFile { state.reportSaveFile(it, saved) }
 
     Column(Modifier.padding(padding)) {
         ScreenColumn {

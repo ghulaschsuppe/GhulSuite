@@ -173,7 +173,7 @@ fun CalEventScreen(state: AppState, id: String, day: String, padding: PaddingVal
     }
     EnsureCalendars(state)
     val t = g
-    val shareIcs = rememberSaveFile { }
+    val shareIcs = rememberSaveFile { state.reportSaveFile(it) }
     val uri = androidx.compose.ui.platform.LocalUriHandler.current
     androidx.compose.foundation.layout.Column(Modifier.padding(padding)) {
         GhulTopBar(
@@ -826,7 +826,7 @@ fun CalendarsSheet(state: AppState, close: () -> Unit) {
     val noCalendar = stringResource(Res.string.cal_import_no_calendar)
     // Texts looked up later (after a count is known) use the language of the screen.
     val env = rememberResourceEnvironment()
-    val save = rememberSaveFile { }
+    val save = rememberSaveFile { state.reportSaveFile(it) }
     val pick = rememberOpenFile { f ->
         val target = importInto ?: return@rememberOpenFile
         state.run(block = {
@@ -946,7 +946,7 @@ private fun CalendarEditSheet(state: AppState, start: CalCalendarUi, close: () -
     val cal = state.backend.cal
     var c by remember { mutableStateOf(start) }
     var confirm by remember { mutableStateOf(false) }
-    val save = rememberSaveFile { }
+    val save = rememberSaveFile { state.reportSaveFile(it) }
     val defaultName = stringResource(Res.string.cal_new_calendar)
     GhulSheet(close, stringResource(if (start.id.isEmpty()) Res.string.cal_new_calendar else Res.string.cal_edit_calendar)) {
         OutlinedTextField(c.name, { c = c.copy(name = it) }, label = { Text(stringResource(Res.string.cal_name)) }, singleLine = true, modifier = Modifier.fillMaxWidth())

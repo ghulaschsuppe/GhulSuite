@@ -771,6 +771,10 @@ pub(super) fn second_factor(
     }
 }
 
+/// The message when the file of a vault to be removed cannot be deleted (another program holds
+/// it): nothing was removed (translated by the app).
+pub const VAULT_NOT_REMOVED: &str = "the vault could not be removed: its file cannot be deleted right now";
+
 /// The message when a suite has as many GhulDocs vaults as it may (translated by the app).
 pub(super) const DOCS_VAULTS_FULL: &str = "a suite has at most 3 GhulDocs vaults";
 
@@ -1821,10 +1825,19 @@ impl GhulSuite {
         self.with_open(|o| {
             super::single::refuse_single(o)?;
             let pos = o.vaults.iter().position(|v| v.reference.id == id).ok_or(GhulError::NotFound)?;
-            let v = o.vaults.remove(pos);
+            let file = o.vaults[pos].reference.file.clone();
             self.note_content_change();
             self.mark_unsaved()?;
-            self.storage.delete(v.reference.file.clone())?;
+            // M8: the vault leaves the open suite only once its file is gone; if that fails it
+            // stays listed (and goes into the next suite file), as on the disk.
+            self.storage.delete(file).map_err(|e| match GhulError::from(e) {
+                full @ GhulError::NoSpace { .. } => full,
+                other => {
+                    eprintln!("GhulSuite: a vault file could not be deleted: {other}");
+                    GhulError::Storage { msg: VAULT_NOT_REMOVED.into() }
+                }
+            })?;
+            let v = o.vaults.remove(pos);
             // The content files of a GhulDocs vault go with it (what is left goes at the next unlock).
             if v.reference.kind == "docs" {
                 if let Ok(dir) = self.docs_dir(&v.reference.id) {

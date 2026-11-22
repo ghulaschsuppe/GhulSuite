@@ -47,10 +47,11 @@ expect fun rememberOpenFile(onPicked: (de.danerd.ghulsuite.model.PickedFile) -> 
 
 /**
  * Returns a launcher that asks the user where to save a file (suggested name, content);
- * [onSaved] receives whether the file was written.
+ * [onSaved] receives how it ended: saved, cancelled, or chosen but not written (M8: a failed
+ * write says so, see [reportSaveFile]).
  */
 @Composable
-expect fun rememberSaveFile(onSaved: (Boolean) -> Unit): (String, ByteArray) -> Unit
+expect fun rememberSaveFile(onSaved: (SaveFileResult) -> Unit): (String, ByteArray) -> Unit
 
 /**
  * Returns a launcher that picks a suite file (`.ghlzip`), a GhulDocs package (`.ghldocs`) or a vault file to open. Nothing is read
@@ -89,10 +90,11 @@ expect fun rememberOpenStreams(onPicked: (List<de.danerd.ghulsuite.model.ByteSou
 
 /**
  * Returns a launcher that asks the user where to save a file (suggested name and MIME type);
- * [onCreated] receives a stream to write to, or null if cancelled.
+ * [onCreated] receives a stream to write to, or null if cancelled. A place chosen that cannot be
+ * opened for writing calls [onFailed] first (then [onCreated] with null).
  */
 @Composable
-expect fun rememberCreateStream(onCreated: (de.danerd.ghulsuite.model.ByteSink?) -> Unit): (String, String) -> Unit
+expect fun rememberCreateStream(onFailed: () -> Unit = {}, onCreated: (de.danerd.ghulsuite.model.ByteSink?) -> Unit): (String, String) -> Unit
 
 /** QR code modules for [text] (rows of dark/light), via ZXing on both platforms. */
 expect fun qrModules(text: String): List<BooleanArray>

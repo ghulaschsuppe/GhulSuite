@@ -200,9 +200,20 @@ actual fun rememberOpenFile(onPicked: (PickedFile) -> Unit): () -> Unit = {
 }
 
 @Composable
-actual fun rememberSaveFile(onSaved: (Boolean) -> Unit): (String, ByteArray) -> Unit = { name, data ->
-    val f = chooseSave(name)
-    onSaved(f != null && runCatching { writeReplacing(f, data) }.isSuccess)
+actual fun rememberSaveFile(onSaved: (SaveFileResult) -> Unit): (String, ByteArray) -> Unit = { name, data ->
+    onSaved(saveChosenFile(chooseSave(name), data))
+}
+
+/** M8: writes [data] to the file chosen ([f], null: the dialog was closed) and says how it went. */
+internal fun saveChosenFile(f: File?, data: ByteArray): SaveFileResult {
+    f ?: return SaveFileResult.CANCELLED
+    return try {
+        writeReplacing(f, data)
+        SaveFileResult.SAVED
+    } catch (e: Exception) {
+        val free = { f.absoluteFile.parentFile?.takeIf { it.isDirectory }?.usableSpace }
+        if (de.danerd.ghulsuite.isNoSpace(e, free)) SaveFileResult.NO_SPACE else SaveFileResult.FAILED
+    }
 }
 
 @Composable
@@ -263,7 +274,7 @@ actual fun rememberOpenStreams(onPicked: (List<ByteSource>) -> Unit): () -> Unit
 }
 
 @Composable
-actual fun rememberCreateStream(onCreated: (ByteSink?) -> Unit): (String, String) -> Unit = { name, _ ->
+actual fun rememberCreateStream(onFailed: () -> Unit, onCreated: (ByteSink?) -> Unit): (String, String) -> Unit = { name, _ ->
     val f = chooseSave(name)
     if (f == null) {
         onCreated(null)
@@ -271,6 +282,8 @@ actual fun rememberCreateStream(onCreated: (ByteSink?) -> Unit): (String, String
         // A read-only stick or a file locked by another program: "not created", no crash.
         val out = runCatching { f.outputStream().buffered() }.getOrNull()
         if (out == null) {
+            // r7 N-5: chosen but not writable is no "cancelled".
+            onFailed()
             onCreated(null)
         } else {
             onCreated(object : ByteSink {

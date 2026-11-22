@@ -845,7 +845,7 @@
     <string name="wz_step_code">Recovery code</string>
     <string name="wz_pw_hint">The password never leaves your device. Without password and second factor only the recovery code helps (step 7).</string>
     <string name="wz_key_sub">Recommended · YubiKey, Nitrokey … via USB or NFC</string>
-    <string name="wz_key_touch">Plug in the key or hold it to the phone (NFC) and touch it when GhulSuite asks (when the suite is made in step 3).</string>
+    <string name="wz_key_touch">Plug in the key and touch it when GhulSuite asks (when the suite is made in step 3).</string>
     <string name="wz_keyfile_hint">Keep it apart from the suite file: not on the same stick and not in the same folder.</string>
     <string name="wz_factor_hint">To unlock you always need the password and this second factor. More keys or a spare key file can be added later in Options.</string>
     <string name="wz_create_touch">Next, GhulSuite creates the suite. Touch your key twice when asked.</string>
@@ -1064,6 +1064,7 @@
     <string name="file_saved">Saved in %1$s.</string>
     <string name="file_unreachable">The suite file cannot be reached right now (is the USB stick plugged in?). Save to a new place or try again.</string>
     <string name="file_not_written">The suite file could not be written completely. The file at its place may be incomplete now; everything is safe in the app. Save again or at a new place.</string>
+    <string name="file_save_failed">The file could not be saved. Try again or choose another place.</string>
     <string name="file_unreadable">The file cannot be read (is the USB stick plugged in?).</string>
     <string name="file_overwrite">Overwrite</string>
     <string name="file_open_title">Open suite file</string>
@@ -1124,6 +1125,8 @@
     <string name="core_replace_proof">The suite on this device is only replaced when you confirm it with its master password and key or key file, or its recovery code.</string>
     <string name="core_copy_changed">Something changed on this device since the file was checked. Open the file again.</string>
     <string name="core_replace_unfinished">An earlier opening of a suite file could not be finished. Restart the app. If it stays, free some space and close other programs that might use the files of GhulSuite.</string>
+    <string name="core_only_usb_nfc">Only a security key over USB or NFC can be added; a phone or a Bluetooth device does not work.</string>
+    <string name="core_vault_not_removed">The vault could not be removed: its file cannot be deleted right now. Close other programs that may have it open and try again.</string>
     <string name="core_replace_aside_missing">The documents from before the last opening of a suite file were not found. So that nothing is lost, everything stays as it is. Restart the app and check that its data folder is all there (is the stick plugged in properly, for example?).</string>
     <string name="core_docs_busy">Documents are being added or copied right now. Try again when that is done.</string>
     <string name="core_folders_deep">Folders cannot be nested any deeper.</string>

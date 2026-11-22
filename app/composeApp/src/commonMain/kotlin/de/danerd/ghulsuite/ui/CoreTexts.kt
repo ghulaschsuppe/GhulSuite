@@ -41,6 +41,8 @@ private val CORE_TEXTS: Map<String, StringResource> = mapOf(
     "the file holds too many events" to Res.string.core_ics_many,
     "quick unlock needs a validity" to Res.string.core_quick_validity,
     "PIN must have at least 6 characters" to Res.string.core_pin_six,
+    "only a security key over USB or NFC can be registered" to Res.string.core_only_usb_nfc,
+    "the vault could not be removed: its file cannot be deleted right now" to Res.string.core_vault_not_removed,
     // From the app (Windows, "Open with app", H4).
     "the copy could not be marked as downloaded" to Res.string.docs_open_no_mark,
     "the update needs PowerShell" to Res.string.upd_no_powershell,

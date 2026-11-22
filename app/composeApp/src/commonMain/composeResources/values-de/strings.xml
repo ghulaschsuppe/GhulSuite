@@ -845,7 +845,7 @@
     <string name="wz_step_code">Wiederherstellungscode</string>
     <string name="wz_pw_hint">Das Passwort verlässt nie dein Gerät. Ohne Passwort und zweiten Faktor hilft nur noch der Wiederherstellungscode (Schritt 7).</string>
     <string name="wz_key_sub">Empfohlen · YubiKey, Nitrokey … per USB</string>
-    <string name="wz_key_touch">Key einstecken oder ans Handy halten (NFC) und berühren, wenn GhulSuite darum bittet (beim Anlegen in Schritt 3).</string>
+    <string name="wz_key_touch">Key einstecken und berühren, wenn GhulSuite darum bittet (beim Anlegen in Schritt 3).</string>
     <string name="wz_keyfile_hint">Bewahre sie getrennt von der Suite-Datei auf: nicht auf demselben Stick und nicht im selben Ordner.</string>
     <string name="wz_factor_hint">Zum Entsperren brauchst du immer Passwort und diesen zweiten Faktor. Weitere Keys oder eine Ersatz-Schlüsseldatei fügst du später unter Optionen hinzu.</string>
     <string name="wz_create_touch">Als Nächstes legt GhulSuite die Suite an. Berühre deinen Key zweimal, wenn GhulSuite darum bittet.</string>
@@ -1064,6 +1064,7 @@
     <string name="file_saved">Gespeichert in %1$s.</string>
     <string name="file_unreachable">Die Suite-Datei ist gerade nicht erreichbar (ist der USB-Stick eingesteckt?). Speichere unter einem neuen Ort oder versuche es erneut.</string>
     <string name="file_not_written">Die Suite-Datei ließ sich nicht vollständig schreiben. Die Datei am Ort kann jetzt unvollständig sein; in der App ist alles sicher da. Speichere erneut oder an einem neuen Ort.</string>
+    <string name="file_save_failed">Die Datei ließ sich nicht speichern. Versuche es erneut oder wähle einen anderen Ort.</string>
     <string name="file_unreadable">Die Datei lässt sich nicht lesen (ist der USB-Stick eingesteckt?).</string>
     <string name="file_overwrite">Überschreiben</string>
     <string name="file_open_title">Suite-Datei öffnen</string>
@@ -1124,6 +1125,8 @@
     <string name="core_replace_proof">Die Suite auf diesem Gerät wird nur ersetzt, wenn du sie mit ihrem Master-Passwort und Key oder Schlüsseldatei oder ihrem Wiederherstellungscode bestätigst.</string>
     <string name="core_copy_changed">Auf diesem Gerät hat sich seit der Prüfung der Datei etwas geändert. Öffne die Datei noch einmal.</string>
     <string name="core_replace_unfinished">Ein früheres Öffnen einer Suite-Datei ließ sich nicht abschließen. Starte die App neu. Bleibt es dabei, schaffe Speicherplatz und schließe andere Programme, die auf die Dateien von GhulSuite zugreifen könnten.</string>
+    <string name="core_only_usb_nfc">Nur ein Key (Sicherheitsschlüssel) über USB oder NFC lässt sich hinzufügen; ein Handy oder ein Bluetooth-Gerät geht nicht.</string>
+    <string name="core_vault_not_removed">Der Tresor ließ sich nicht entfernen: Seine Datei kann gerade nicht gelöscht werden. Schließe andere Programme, die sie geöffnet haben könnten, und versuche es erneut.</string>
     <string name="core_replace_aside_missing">Die Dokumente von vor dem letzten Öffnen einer Suite-Datei wurden nicht gefunden. Damit nichts verloren geht, bleibt alles, wie es ist. Starte die App neu und prüfe, ob ihr Datenordner vollständig da ist (steckt z. B. der Stick richtig?).</string>
     <string name="core_docs_busy">Gerade werden Dokumente hinzugefügt oder kopiert. Versuche es erneut, wenn das fertig ist.</string>
     <string name="core_folders_deep">Ordner lassen sich nicht tiefer verschachteln.</string>

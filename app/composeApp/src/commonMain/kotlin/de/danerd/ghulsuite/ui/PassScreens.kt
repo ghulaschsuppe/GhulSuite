@@ -432,7 +432,7 @@ fun EntryDetailScreen(state: AppState, vaultId: String, id: String, padding: Pad
         var pw by remember { mutableStateOf("") }
         var error by remember { mutableStateOf<String?>(null) }
         val savedMsg = stringResource(Res.string.msg_saved_file)
-        val saveExport = rememberSaveFile { ok -> if (ok) { state.message(savedMsg); sheet = "" } }
+        val saveExport = rememberSaveFile { r -> state.reportSaveFile(r, savedMsg); if (r == SaveFileResult.SAVED) sheet = "" }
         val fileName = (e.value("title").ifBlank { "eintrag" }).replace(Regex("[^\\p{L}\\p{N} ._-]"), "_") + ".csv"
         GhulSheet({ sheet = "" }, stringResource(Res.string.pass_export_one)) {
             HintText(stringResource(Res.string.pass_export_one_warning))
@@ -558,7 +558,7 @@ private fun EntryCodeCard(state: AppState, secret: String) {
 @Composable
 private fun AttachmentsSheet(state: AppState, vaultId: String, id: String, list: List<de.danerd.ghulsuite.model.AttachmentUi>, onChanged: () -> Unit, onDismiss: () -> Unit) {
     val savedMsg = stringResource(Res.string.msg_saved_file)
-    val save = rememberSaveFile { ok -> if (ok) state.message(savedMsg) }
+    val save = rememberSaveFile { state.reportSaveFile(it, savedMsg) }
     val add = rememberOpenFile { f -> state.run(block = { state.backend.addAttachment(vaultId, id, f.name, f.bytes) }) { onChanged(); state.changed() } }
     val removedMsg = stringResource(Res.string.msg_deleted)
     // F103: removing a file asks first; "Undo" in the snackbar brings it back as well.

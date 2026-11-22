@@ -497,7 +497,12 @@ private fun KeyfileDialog(state: AppState, onDismiss: () -> Unit) {
     var keyfile by remember { mutableStateOf<ByteArray?>(null) }
     var saved by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
-    val save = rememberSaveFile { ok -> saved = ok }
+    val failText = rememberSaveFileFailedText()
+    val save = rememberSaveFile { r ->
+        saved = r == SaveFileResult.SAVED
+        // r7 N-3: saved clears an earlier error; cancelled keeps it.
+        if (saved) error = null else failText(r)?.let { error = it }
+    }
     val open = rememberOpenFile { file -> keyfile = file.bytes; saved = true }
     var label by remember { mutableStateOf("") }
     val proof = rememberProofInput(state)
@@ -638,7 +643,7 @@ private fun AboutSection(state: AppState) {
     val backend = state.backend
     var sheet by remember { mutableStateOf("") }
     val savedMsg = stringResource(Res.string.msg_saved_file)
-    val save = rememberSaveFile { ok -> if (ok) state.message(savedMsg) }
+    val save = rememberSaveFile { state.reportSaveFile(it, savedMsg) }
     val report = buildString {
         appendLine("GhulSuite ${backend.appVersion}")
         appendLine(backend.coreVersion)

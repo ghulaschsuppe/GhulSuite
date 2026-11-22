@@ -19,8 +19,8 @@ Stand 22.11.2026, nach den fünf Prüfrunden, dem Gutachten zur Veröffentlichun
 
 | | |
 |---|---|
-| Testfunktionen im Kern | 310 (303 bei jedem Lauf, alle bestanden; 7 ignoriert: Langläufe und Stresstests, Netz und x509-limbo nur nachts, dazu die zwei Helfer, die die Format-3-Dateien einmal erzeugt haben) |
-| Tests der App am Desktop | 158 (`desktopTest`) und 20 mit der echten Kern-Anbindung (`desktopAppBindingTest`), alle bestanden |
+| Testfunktionen im Kern | 312 (305 bei jedem Lauf, alle bestanden; 7 ignoriert: Langläufe und Stresstests, Netz und x509-limbo nur nachts, dazu die zwei Helfer, die die Format-3-Dateien einmal erzeugt haben) |
+| Tests der App am Desktop | 159 (`desktopTest`) und 20 mit der echten Kern-Anbindung (`desktopAppBindingTest`), alle bestanden |
 | Letzter vollständiger Precheck | 22.11.2026, grün (`tools/precheck.sh` mit Gradle, Android-Build und Desktop-Paketen). Windows (Clippy, Build, Tests) und der Emulator laufen nur in der CI |
 | Einzelprüfungen pro Lauf | über 1 Million (u. a. Zeitzonen-Umrechnungen in 446 Zonen, Kalendertage, Fuzz-Eingaben, Base32-Schreibweisen, Wiederherstellungscodes, HOTP-Fälle, Passwortgenerator-Varianten, Aktionen „bekloppter Nutzer“, 515 Naughty Strings in jedem Feld) |
 | Davon gegen echte Server | keine mehr (Testserver mit dem Umbau entfallen); nachts badssl.com und x509-limbo gegen den TLS-Prüfer |
@@ -587,7 +587,7 @@ deinstallieren.
 | GP-M5 | M | Schutz-Notizen ohne Sperre gelesen und geschrieben | Eigene Sperre. `notes_of_the_device_are_written_one_at_a_time` |
 | GP-M6 | M | Übernehmen löschte Dokumentordner, während GhulDocs-Aufträge liefen | Abgelehnt, solange Dokumente hinzukommen oder sich ein Tresor seit der Prüfung geändert hat. `taking_a_file_after_a_change_or_during_a_copy_is_refused`, `only_a_change_of_the_content_refuses_taking_a_file` |
 | GP-M7 | M | Ein Update konnte ein laufendes Speichern oder eine Eingabe abbrechen | Direkt vor dem Übergeben erneut geprüft. `InteractionTest.updateWaitsForInputStartedMeanwhile` |
-| GP-M8 | M | Tresor entfernen war im Fehlerfall nur halb rückgängig; gescheiterte Exporte meldeten nichts | **Offen** |
+| GP-M8 | M | Tresor entfernen war im Fehlerfall nur halb rückgängig; gescheiterte Exporte meldeten nichts | Behoben: `a_vault_whose_file_cannot_be_removed_stays`, `SaveFileResultTest` |
 | GP-M9 | M | Ein Lesefehler löschte alle geplanten Kalender-Erinnerungen | Sie bleiben. `InteractionTest.remindersCarryOnlyTheChosenDetail` |
 | GP-M10 | M | Eine halb geschriebene Datei hieß „keine GhulSuite-Datei“ | „the suite file is incomplete“. `a_cut_suite_file_is_incomplete` |
 | GP-M11 | M | Notfall: Speichern überschrieb die Datei, die mit dem Code geöffnet wurde, ohne Rückfrage | Sie wird nicht Speicherziel, der Dialog lässt einen Ort wählen; Testplan GR7 |
@@ -600,7 +600,7 @@ deinstallieren.
 | GP-M18 | M | Erinnerungstexte im Volltext an Apps mit Benachrichtigungszugriff und ins Info-Center | Wie GP-M12; **Rest** mit „Alles“ |
 | GP-M19 | M | App-PIN: Kern erlaubte 4 Ziffern, Zähler nur in den App-Einstellungen, mit Root offline angreifbar | Mindestens 6 auch im Kern und beim Entsperren. **Rest:** Zähler und Root (AUDIT 4.6) |
 | GP-M20 | M | Schlüsseldatei-Texte empfahlen denselben Stick wie für die Suite-Datei | Texte: getrennt aufbewahren |
-| GP-M21 | M | Unter Windows lässt sich vermutlich ein Handy-Passkey als „Security Key“ registrieren | **Offen** (nicht nachgeprüft) |
+| GP-M21 | M | Unter Windows lässt sich vermutlich ein Handy-Passkey als „Security Key“ registrieren | Nach der API-Doku zutreffend, behoben: Windows nimmt nur USB oder NFC an (`dwUsedTransport`); nur in der Windows-CI gebaut, auf echtem Windows 11 mit Handy nachzuprüfen |
 | GP-M22 | M | Website-Zugangsdaten standen jedem Push zur Verfügung | Environment `website`, nur `main`; die Vorschau auf dem Testserver entfällt |
 | GP-M23 | M | Gradle ohne Prüfsumme, `pillow` ohne Version | `distributionSha256Sum`, Prüfsumme von `gradle-wrapper.jar` vor jedem `gradlew` (Gradle läuft nur nach bestandener Prüfung), `pillow==11.3.0` |
 | GP-M24 | M | MSI-Update: Datei zwischen Prüfung und Installation austauschbar, Fehlschlag stumm | Kein Skript auf der Platte (`-EncodedCommand`), MSI bis zum Ende von `msiexec` offen gehalten, SHA-256 direkt davor, Ergebnis beim nächsten Start (auch „nicht ausgeführt“ nach 10 Minuten). `UpdateScriptTest`, `UpdateScriptTest.pendingCountsAsNotRunOnlyAfterSomeMinutes`. **Nur als Text des Skripts getestet**, unter Windows nicht ausgeführt (AUDIT 4.6) |

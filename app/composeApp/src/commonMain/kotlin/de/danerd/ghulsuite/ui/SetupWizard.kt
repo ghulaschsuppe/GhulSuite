@@ -151,7 +151,12 @@ fun NewSuiteWizard(state: AppState, onCancel: () -> Unit) {
         areaName[VaultKindUi.DOCS] = state.str(Res.string.area_docs_default)
         areaName[VaultKindUi.CAL] = state.str(Res.string.area_cal_default)
     }
-    val saveKeyfile = rememberSaveFile { ok -> keyfileSaved = ok; if (ok) error = null }
+    val failText = rememberSaveFileFailedText()
+    val saveKeyfile = rememberSaveFile { r ->
+        keyfileSaved = r == SaveFileResult.SAVED
+        // r7 N-4: saved clears an earlier error, a failure shows its own, cancelled keeps it.
+        if (keyfileSaved) error = null else failText(r)?.let { error = it }
+    }
     val openKeyfile = rememberOpenFile { file -> keyfile = file.bytes; keyfileSaved = true; error = null }
     val notSaved = stringResource(Res.string.keyfile_not_saved)
     /** A suite on this device already (step 3 offers to open or replace it). */
