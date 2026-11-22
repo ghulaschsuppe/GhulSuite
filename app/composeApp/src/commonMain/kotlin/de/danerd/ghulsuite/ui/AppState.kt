@@ -360,8 +360,8 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
      */
     var oldSuiteFile by mutableStateOf<de.danerd.ghulsuite.model.SuiteFileRef?>(null)
     var movedTo by mutableStateOf<de.danerd.ghulsuite.model.SuiteFileRef?>(null)
-    /** Whether the old file may be deleted (checked: only a state of this suite's own line). */
-    var oldDeletable by mutableStateOf(false)
+    /** What the old file is (checked: only a state of this suite's own line may go). */
+    var oldCheck by mutableStateOf(de.danerd.ghulsuite.model.OldFileCheck.OTHER)
     /** A conflict was shown in this save dialog (then no "Delete old file", review H2). */
     var saveConflictSeen = false
 
@@ -676,6 +676,10 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
                     // r10 N2: a question about another file's place does not wait across a lock.
                     saveTargetOffer = null
                     oldSuiteFile = null
+                    // Review N2: a conflict shown before does not count after the lock; a safe
+                    // place chosen but not saved to gives its grant back.
+                    saveConflictSeen = false
+                    if (saveJob == null) releasePendingPlace()
                     dropPending()
                     // A scan in progress: its photos and pages are overwritten now, not saved.
                     scanSession?.wipe()

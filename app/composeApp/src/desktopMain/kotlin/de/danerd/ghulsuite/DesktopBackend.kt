@@ -182,6 +182,13 @@ object SuiteFiles {
         return if (f.exists()) SuiteDocDelete.FAILED else SuiteDocDelete.DELETED
     }
 
+    /** "THERE", "GONE" (its folder is there) or "UNREACHABLE" (its folder or drive is not). */
+    fun presence(f: File): String = when {
+        f.absoluteFile.parentFile?.isDirectory != true -> "UNREACHABLE"
+        f.isFile -> "THERE"
+        else -> "GONE"
+    }
+
     /** Whether [a] and [b] are one file: the same file where both are there, else the same path ignoring case. */
     fun sameFile(a: File, b: File): Boolean {
         if (a.exists() && b.exists()) return java.nio.file.Files.isSameFile(a.toPath(), b.toPath())
@@ -343,6 +350,8 @@ class DesktopVaultBackend(private val window: () -> java.awt.Window?) :
     override fun samePlace(a: SuiteFileRef, b: SuiteFileRef): Boolean = SuiteFiles.sameFile(File(a.id), File(b.id))
 
     override fun placeReachable(ref: SuiteFileRef): Boolean = File(ref.id).absoluteFile.parentFile?.isDirectory == true
+
+    override fun presence(ref: SuiteFileRef): Presence = SuiteFiles.presence(File(ref.id)).let { Presence.valueOf(it) }
 
     override fun leftoversOf(ref: SuiteFileRef): List<SuiteFileRef> = SuiteFiles.leftovers(File(ref.id))
 

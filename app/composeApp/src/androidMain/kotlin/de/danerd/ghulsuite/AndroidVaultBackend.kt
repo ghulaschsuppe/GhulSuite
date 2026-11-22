@@ -491,6 +491,44 @@ class AndroidVaultBackend(private val context: Context, private val activity: ()
         return if (ok) de.danerd.ghulsuite.SuiteDocDelete.DELETED else de.danerd.ghulsuite.SuiteDocDelete.FAILED
     }
 
+    /**
+     * Review N3: there, gone or not reachable. Through a shared folder its folder decides; a
+     * document without one: an empty answer of its provider is "gone", no answer "not reachable".
+     */
+    override fun presence(ref: SuiteFileRef): Presence {
+        val uri = runCatching { io(ref) }.getOrNull() ?: return Presence.UNREACHABLE
+        val rows = try {
+            context.contentResolver.query(uri, arrayOf(android.provider.DocumentsContract.Document.COLUMN_DOCUMENT_ID), null, null, null)
+                ?.use { it.count }
+        } catch (e: Exception) {
+            // Review N-3: the device's storage answers a missing document with FileNotFound.
+            // Gone where its folder (or at least its volume) is there; else not reachable.
+            return when {
+                safePlace(ref) != null && placeReachable(ref) -> Presence.GONE
+                volumeThere(ref) -> Presence.GONE
+                else -> Presence.UNREACHABLE
+            }
+        }
+        return when {
+            rows == null -> Presence.UNREACHABLE
+            rows > 0 -> Presence.THERE
+            safePlace(ref) != null && !placeReachable(ref) -> Presence.UNREACHABLE
+            else -> Presence.GONE
+        }
+    }
+
+    /** The volume of a document of the device's storage is mounted ("primary" always; an SD card or a stick when there). */
+    private fun volumeThere(ref: SuiteFileRef): Boolean = runCatching {
+        val uri = Uri.parse(ref.id)
+        if (uri.authority != EXTERNAL_STORAGE) return@runCatching false
+        val volume = android.provider.DocumentsContract.getDocumentId(uri).substringBefore(':', "")
+        when {
+            volume.isEmpty() -> false
+            volume == "primary" -> true
+            else -> File("/storage/$volume").isDirectory
+        }
+    }.getOrDefault(false)
+
     /** The folder of [ref] answers (only known through a shared folder; else: not known, so not). */
     override fun placeReachable(ref: SuiteFileRef): Boolean {
         val place = safePlace(ref) ?: return false

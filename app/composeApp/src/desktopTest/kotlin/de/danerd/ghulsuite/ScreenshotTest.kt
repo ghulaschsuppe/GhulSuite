@@ -97,7 +97,8 @@ class ScreenshotTest {
         }
         /** Whether "Delete old file" is offered (the real backend checks the file's state). */
         var oldOwnLine = true
-        override suspend fun oldFileDeletable(old: de.danerd.ghulsuite.model.SuiteFileRef) = oldOwnLine
+        override suspend fun oldFileCheck(old: de.danerd.ghulsuite.model.SuiteFileRef) =
+            if (oldOwnLine) de.danerd.ghulsuite.model.OldFileCheck.SAME else de.danerd.ghulsuite.model.OldFileCheck.OTHER
         /** What is at the place of the suite file (null: it cannot be reached). */
         var target: de.danerd.ghulsuite.model.ArchiveTargetUi? = de.danerd.ghulsuite.model.ArchiveTargetUi.NEW
         /** Who saved the file there, and when (shown before overwriting it). */

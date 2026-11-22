@@ -896,11 +896,13 @@ fun OldSuiteFileDialog(state: AppState) {
     var asking by remember(old) { mutableStateOf(false) }
     var gate by remember(old) { mutableStateOf(false) }
     var outcome by remember(old) { mutableStateOf<de.danerd.ghulsuite.model.OldFileDelete?>(null) }
-    val close = { state.oldSuiteFile = null; state.movedTo = null; state.oldDeletable = false }
+    val check = state.oldCheck
+    val close = { state.oldSuiteFile = null; state.movedTo = null; state.oldCheck = de.danerd.ghulsuite.model.OldFileCheck.OTHER }
     val deletedMsg = stringResource(Res.string.old_file_deleted, old.name)
     if (gate) {
         PasswordGateDialog(
-            state, stringResource(Res.string.old_file_title), stringResource(Res.string.old_file_ask, old.name),
+            state, stringResource(Res.string.old_file_title),
+            stringResource(if (check == de.danerd.ghulsuite.model.OldFileCheck.EARLIER_PROTECTION) Res.string.old_file_ask_wipe else Res.string.old_file_ask, old.name),
             confirmLabel = stringResource(Res.string.old_file_delete_now), onDismiss = { gate = false; asking = false },
         ) {
             gate = false
@@ -917,7 +919,7 @@ fun OldSuiteFileDialog(state: AppState) {
         return
     }
     val o = outcome
-    val canDelete = state.oldDeletable && (o == null || o.outcome == de.danerd.ghulsuite.model.OldFileOutcome.FAILED ||
+    val canDelete = check.deletable && (o == null || o.outcome == de.danerd.ghulsuite.model.OldFileOutcome.FAILED ||
         o.outcome == de.danerd.ghulsuite.model.OldFileOutcome.UNREACHABLE)
     AlertDialog(
         onDismissRequest = close,
@@ -925,13 +927,21 @@ fun OldSuiteFileDialog(state: AppState) {
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(stringResource(Res.string.file_saved_moved, now?.name ?: "", old.name))
-                if (!state.oldDeletable) Text(stringResource(Res.string.old_file_other_state))
-                if (asking) Text(stringResource(Res.string.old_file_ask, old.name), color = warnColor())
+                // Review N3: the reason as it is (not "another state" for a stick not plugged in).
+                when (check) {
+                    de.danerd.ghulsuite.model.OldFileCheck.OTHER -> Text(stringResource(Res.string.old_file_other_state))
+                    de.danerd.ghulsuite.model.OldFileCheck.UNREACHABLE -> Text(stringResource(Res.string.old_file_unreachable, old.name))
+                    de.danerd.ghulsuite.model.OldFileCheck.GONE -> Text(stringResource(Res.string.old_file_gone))
+                    de.danerd.ghulsuite.model.OldFileCheck.EARLIER_PROTECTION -> Text(stringResource(Res.string.old_file_earlier_protection))
+                    de.danerd.ghulsuite.model.OldFileCheck.SAME -> {}
+                }
+                if (asking) Text(stringResource(if (check == de.danerd.ghulsuite.model.OldFileCheck.EARLIER_PROTECTION) Res.string.old_file_ask_wipe else Res.string.old_file_ask, old.name), color = warnColor())
                 o?.let {
                     Text(
                         when (it.outcome) {
                             de.danerd.ghulsuite.model.OldFileOutcome.UNREACHABLE -> stringResource(Res.string.old_file_unreachable, it.where)
                             de.danerd.ghulsuite.model.OldFileOutcome.FAILED -> stringResource(Res.string.old_file_failed, it.where)
+                            de.danerd.ghulsuite.model.OldFileOutcome.CHANGED -> stringResource(Res.string.old_file_changed)
                             de.danerd.ghulsuite.model.OldFileOutcome.DIFFERENT_STATE, de.danerd.ghulsuite.model.OldFileOutcome.SAME_FILE ->
                                 stringResource(Res.string.old_file_other_state)
                             else -> stringResource(Res.string.old_file_by_hand, it.where)

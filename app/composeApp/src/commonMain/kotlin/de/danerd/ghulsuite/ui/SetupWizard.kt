@@ -344,7 +344,7 @@ fun NewSuiteWizard(state: AppState, onCancel: () -> Unit) {
                 // and a way to delete it.
                 if (before != null && !backend.isSamePlace(before, ref)) {
                     state.scope.launch {
-                        state.oldDeletable = backend.oldFileDeletable(before)
+                        state.oldCheck = backend.oldFileCheck(before)
                         state.movedTo = ref
                         state.oldSuiteFile = before
                     }
@@ -359,7 +359,8 @@ fun NewSuiteWizard(state: AppState, onCancel: () -> Unit) {
     val chooseSafePlace = rememberChooseSafePlace { r ->
         when (r) {
             // Review M3: its own file just saved there is no "taken"; only a foreign one is.
-            is SafePlaceResult.Chosen -> if (r.exists && backend.suiteFile()?.let { backend.isSamePlace(r.ref, it) } != true) {
+            // Review N1: strictly: when it cannot be told, a file there counts as foreign (never written over).
+            is SafePlaceResult.Chosen -> if (r.exists && backend.suiteFile()?.let { backend.isSamePlaceStrict(r.ref, it) } != true) {
                 r.release()
                 error = placeTaken
             } else {

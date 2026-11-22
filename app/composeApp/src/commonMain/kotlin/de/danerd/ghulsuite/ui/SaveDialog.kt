@@ -124,6 +124,8 @@ fun AppState.startSaveJob(target: SuiteFileRef, created: Boolean) {
     ) { job ->
         // The place before: saved elsewhere ("Save as"), the old file stays there (said after).
         val before = backend.suiteFile()
+        // Review N-4: the old-file question only within the same unlock as this save.
+        val locksAtStart = backend.lockCount
         try {
             val ok = backend.archiveSave(target, deviceInfo(), created) { done, total ->
                 if (total == WIPING_OLD_FILE) {
@@ -141,10 +143,16 @@ fun AppState.startSaveJob(target: SuiteFileRef, created: Boolean) {
             if (before != null && !backend.isSamePlace(before, target)) {
                 // Written and checked at the new place: the old file is named; "Delete old file"
                 // only where it holds just a state of this suite's own line (not after a conflict).
-                if (backend.unlocked.value) {
-                    oldDeletable = !saveConflictSeen && backend.oldFileDeletable(before)
-                    movedTo = target
-                    oldSuiteFile = before
+                if (backend.unlocked.value && backend.lockCount == locksAtStart) {
+                    // Review N5: checked on the side, so a slow place does not hold back "Saved".
+                    val afterConflict = saveConflictSeen
+                    scope.launch {
+                        val check = backend.oldFileCheck(before)
+                        if (!backend.unlocked.value || backend.lockCount != locksAtStart) return@launch
+                        oldCheck = if (afterConflict && check.deletable) de.danerd.ghulsuite.model.OldFileCheck.OTHER else check
+                        movedTo = target
+                        oldSuiteFile = before
+                    }
                 } else {
                     noteAfterUnlock(str(Res.string.file_saved_moved, target.name, before.name))
                 }

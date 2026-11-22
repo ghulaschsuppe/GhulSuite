@@ -296,8 +296,11 @@ interface VaultBackend {
      */
     fun isSamePlace(a: SuiteFileRef, b: SuiteFileRef): Boolean = a.id == b.id
 
-    /** Whether "Delete old file" may be offered for [old] (it holds only a state of this suite's own line). */
-    suspend fun oldFileDeletable(old: SuiteFileRef): Boolean = false
+    /** Whether "Delete old file" may be offered for [old], and why not (review N3). */
+    suspend fun oldFileCheck(old: SuiteFileRef): OldFileCheck = OldFileCheck.OTHER
+
+    /** [isSamePlace] that says "not the same" when it cannot tell (before writing over a file found there). */
+    fun isSamePlaceStrict(a: SuiteFileRef, b: SuiteFileRef): Boolean = a.id == b.id
 
     /** How often the suite was locked in this process (review N5: windows tied to an unlock end at once). */
     val lockCount: Long get() = 0L
@@ -411,6 +414,23 @@ data class OldFileDelete(val outcome: OldFileOutcome, val where: String) {
     val deleted: Boolean get() = outcome == OldFileOutcome.DELETED
 }
 
+/** What the old suite file is, for "Delete old file". */
+enum class OldFileCheck {
+    /** A state of this suite's own line: may go. */
+    SAME,
+    /** The file this device saved last there, with the protection before a change: written over and deleted. */
+    EARLIER_PROTECTION,
+    /** Another state or protection (e.g. saved on another device): kept. */
+    OTHER,
+    /** Its place is not there now. */
+    UNREACHABLE,
+    /** It is not there any more. */
+    GONE,
+    ;
+
+    val deletable: Boolean get() = this == SAME || this == EARLIER_PROTECTION
+}
+
 enum class OldFileOutcome {
     DELETED,
     /** It is the suite file of now (by its identity or its content): never deleted. */
@@ -423,6 +443,8 @@ enum class OldFileOutcome {
     UNREACHABLE,
     /** Deleting failed (try again). */
     FAILED,
+    /** The file changed between the check and the delete: kept. */
+    CHANGED,
 }
 
 /**
@@ -474,7 +496,8 @@ data class SecurityRulesUi(val passwordMinLength: Int = 10, val passwordMinScore
 class FactorProofUi(val password: String, val pin: String?, val keyfile: ByteArray?)
 
 /** The file at the place a suite is saved to: how it relates, and who saved it when ([device] empty, [time] 0: not known). */
-data class ArchiveTargetInfoUi(val target: ArchiveTargetUi, val device: String = "", val time: Long = 0)
+/** [readable]: the keys of now open the file (false also when not known). */
+data class ArchiveTargetInfoUi(val target: ArchiveTargetUi, val device: String = "", val time: Long = 0, val readable: Boolean = false)
 
 /** A file picked by the user. */
 class PickedFile(val name: String, val bytes: ByteArray)

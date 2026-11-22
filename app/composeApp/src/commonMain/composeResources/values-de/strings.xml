@@ -1081,6 +1081,10 @@
     <string name="old_file_ask">%1$s wirklich löschen? Die neue Datei ist geschrieben und geprüft, und die alte hält nur einen Stand dieser Suite, den die neue Datei schon enthält.</string>
     <string name="old_file_by_hand">Die App kann diese Datei dort nicht löschen. Lösche sie selbst, wenn du sie nicht mehr brauchst: %1$s</string>
     <string name="old_file_deleted">%1$s ist gelöscht.</string>
+    <string name="old_file_changed">Die alte Datei hat sich inzwischen geändert (z. B. hat ein anderes Gerät dort gespeichert). Sie bleibt darum liegen.</string>
+    <string name="old_file_gone">Die alte Datei ist dort nicht mehr da.</string>
+    <string name="old_file_earlier_protection">Die alte Datei ist die, die dieses Gerät dort zuletzt gespeichert hat, noch mit dem früheren Schutz. Sie lässt sich mit dem neuen nicht mehr öffnen; beim Löschen wird sie zuerst überschrieben.</string>
+    <string name="old_file_ask_wipe">%1$s mit dem früheren Schutz überschreiben und löschen? Die neue Datei ist geschrieben und geprüft.</string>
     <string name="old_file_other_state">Die alte Datei hält einen Stand oder Schutz, den dieses Gerät nicht hat (z. B. Änderungen von einem anderen Gerät). Sie bleibt darum liegen; öffne sie, wenn du ihre Änderungen brauchst.</string>
     <string name="old_file_unreachable">Der Ort der alten Datei ist gerade nicht erreichbar (Stick abgezogen?). Versuche es später erneut: %1$s</string>
     <string name="old_file_failed">Löschen ist fehlgeschlagen. Versuche es erneut oder lösche sie selbst: %1$s</string>

@@ -255,6 +255,10 @@ pub struct ArchiveTargetInfo {
     pub device: String,
     /// When it was saved (Unix ms; 0 if not known).
     pub time: i64,
+    /// Whether the keys of now open it (false: not readable, e.g. a protection from before a
+    /// change; also for a file that is no suite file of this suite). The app lets a file it
+    /// cannot read count as its own only by its exact bytes, never a readable one.
+    pub readable: bool,
 }
 
 /// How a `.ghlzip` relates to what this device has.
@@ -1475,7 +1479,7 @@ impl GhulSuite {
     /// [`Self::archive_target`] with the device and time of the file there, when its header can
     /// be read (shown before overwriting a file saved elsewhere).
     pub fn archive_target_info(&self, source: Arc<dyn ArchiveSource>) -> Result<ArchiveTargetInfo> {
-        let bare = |target| ArchiveTargetInfo { target, device: String::new(), time: 0 };
+        let bare = |target| ArchiveTargetInfo { target, device: String::new(), time: 0, readable: false };
         let mut z = suite_zip(source, None);
         let locked = match read_header(&mut z) {
             Ok(l) => l,
@@ -1516,6 +1520,7 @@ impl GhulSuite {
                     target: ArchiveTarget::OtherProtection,
                     device: header.device,
                     time: header.time,
+                    readable: true,
                 });
             }
             let mine: StateRef = setting(&o.suite, STATE_KEY);
@@ -1529,6 +1534,7 @@ impl GhulSuite {
                 target: if ours { ArchiveTarget::Same } else { ArchiveTarget::ChangedElsewhere },
                 device: header.device,
                 time: header.time,
+                readable: true,
             })
         })
     }

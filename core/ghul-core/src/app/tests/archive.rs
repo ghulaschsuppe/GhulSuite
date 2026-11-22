@@ -762,6 +762,29 @@ fn a_file_saved_elsewhere_tells_by_whom_and_when() {
     assert_eq!(a.archive_target_info_bytes(Vec::new()).unwrap().time, 0);
 }
 
+/// The app lets a file it cannot read count as its own only by its exact bytes: the core says
+/// whether the keys of now open it (readable), for a file of another state as well.
+#[test]
+fn the_target_says_whether_the_keys_of_now_read_it() {
+    let (_da, a, kf, _) = device_with_suite("readable-a");
+    let file = save(&a);
+    assert!(a.archive_target_info_bytes(file.clone()).unwrap().readable);
+    // Another device's newer state: readable, but not of the own line.
+    let db = Dirs::new("readable-b");
+    let b = db.suite();
+    open(&b, &file, &kf);
+    b.archive_accept().unwrap();
+    b.save_entry(vault_id(&b, "Privat"), login("Post", "u", "2")).unwrap();
+    let built = b.archive_build_bytes("Laptop".into()).unwrap();
+    let info = a.archive_target_info_bytes(built.data).unwrap();
+    assert_eq!(info.target, ArchiveTarget::ChangedElsewhere);
+    assert!(info.readable);
+    // After a change of the password the file before is no longer readable.
+    a.change_password(kf_proof(PW, &kf), None, None, "pw-neu-7890".into()).unwrap();
+    assert!(!a.archive_target_info_bytes(file).unwrap().readable);
+    assert!(!a.archive_target_info_bytes(Vec::new()).unwrap().readable);
+}
+
 /// A change of the password whose suite file failed after the vaults were written: r10 N5, the
 /// vault files before are put back at once, so the password before opens everything (before,
 /// the vaults with the new protection were listed as unavailable).

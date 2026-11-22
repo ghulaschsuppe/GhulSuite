@@ -1081,6 +1081,10 @@
     <string name="old_file_ask">Really delete %1$s? The new file is written and checked, and the old one only holds a state of this suite that the new file already contains.</string>
     <string name="old_file_by_hand">The app cannot delete this file there. Delete it yourself if you no longer need it: %1$s</string>
     <string name="old_file_deleted">%1$s is deleted.</string>
+    <string name="old_file_changed">The old file changed meanwhile (e.g. another device saved there). So it is kept.</string>
+    <string name="old_file_gone">The old file is no longer there.</string>
+    <string name="old_file_earlier_protection">The old file is the one this device saved there last, still with the earlier protection. It no longer opens with the new one; deleting writes over it first.</string>
+    <string name="old_file_ask_wipe">Write over and delete %1$s with the earlier protection? The new file is written and checked.</string>
     <string name="old_file_other_state">The old file holds a state or protection this device does not have (e.g. changes from another device). So it is kept; open it if you need its changes.</string>
     <string name="old_file_unreachable">The place of the old file cannot be reached right now (stick pulled out?). Try again later: %1$s</string>
     <string name="old_file_failed">Deleting failed. Try again or delete it yourself: %1$s</string>
