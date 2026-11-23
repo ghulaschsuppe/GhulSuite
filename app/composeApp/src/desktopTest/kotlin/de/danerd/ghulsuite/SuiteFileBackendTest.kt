@@ -16,6 +16,7 @@ import de.danerd.ghulsuite.model.KeyValueStore
 import de.danerd.ghulsuite.model.Settings
 import de.danerd.ghulsuite.model.SuiteFileRef
 import de.danerd.ghulsuite.model.VaultException
+import de.danerd.ghulsuite.model.VaultKindUi
 import kotlinx.coroutines.runBlocking
 import java.io.File
 import java.nio.file.Files
@@ -32,7 +33,7 @@ import kotlin.test.assertTrue
  * the target and moved over it only after reading it back, opened as a stream, with progress.
  */
 class SuiteFileBackendTest {
-    private class Backend(dir: File) : CoreVaultBackend(File(dir, "local").absolutePath) {
+    private class Backend(dir: File, realCal: Boolean = false) : CoreVaultBackend(File(dir, "local").absolutePath) {
         private val root = dir
         val prefs = mutableMapOf<String, String>()
         override fun storage(): VaultStorage = localStorage(File(root, "suite").absolutePath)
@@ -76,7 +77,7 @@ class SuiteFileBackendTest {
             override fun getBoolean(key: String, default: Boolean) = map[key] as? Boolean ?: default
             override fun putBoolean(key: String, value: Boolean) { map[key] = value }
         })
-        override val cal = FakeCal()
+        override val cal: de.danerd.ghulsuite.model.CalBackend = if (realCal) CoreCalBackend { suite } else FakeCal()
         override val appVersion = "test"
         override fun copySensitive(label: String, text: String) {}
         override fun printEmergencySheet(code: String, text: EmergencySheetText) {}
@@ -471,6 +472,57 @@ class SuiteFileBackendTest {
             assertTrue(p.isFile, "S1 stays")
             assertTrue(a.wiped.isEmpty())
         } finally {
+            dir.deleteRecursively()
+        }
+    }
+
+    /**
+     * Device test after PR #55: a new suite, set up as the wizard does (no area at first, then all
+     * four areas, then the suite file), was "unsaved: GhulCal" without a touch: the first look at
+     * GhulCal made the usual calendars and the area settings were filled in from this device, both
+     * after the suite file. Now both go into the area files when they are made.
+     */
+    @Test
+    fun aNewSuiteIsSavedAfterTheFirstLookAtEachArea() = runBlocking<Unit> {
+        val dir = Files.createTempDirectory("ghul-new").toFile()
+        val scope = kotlinx.coroutines.CoroutineScope(
+            kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.Default +
+                kotlinx.coroutines.CoroutineExceptionHandler { _, e -> if (e !is java.awt.HeadlessException) throw e },
+        )
+        try {
+            val kf = generateKeyfile()
+            val a = Backend(dir, realCal = true)
+            a.create(
+                de.danerd.ghulsuite.model.SetupUi(
+                    password = password, keyPin = null, keyLabel = "Key", keyfile = kf, keyfileLabel = "Datei",
+                    recoveryLabel = "Code", kdf = de.danerd.ghulsuite.model.KdfChoice(65536, 3, 0), vaults = emptyList(),
+                ),
+            ) {}
+            if (!a.unlocked.value) a.unlock(password, null, kf) {}
+            val defaults = listOf("Privat" to 0xD6336C, "Arbeit" to 0x2F74E8)
+            // Step 4 of the wizard: the areas (applyAreas).
+            for (kind in listOf(VaultKindUi.PASS, VaultKindUi.TOTP, VaultKindUi.DOCS, VaultKindUi.CAL)) {
+                a.addArea(kind, "")
+                de.danerd.ghulsuite.model.prepareNewArea(a, kind, defaults)
+            }
+            // Step 8: the suite file.
+            val p = File(dir, "stick/GhulSuite.ghlzip").apply { parentFile.mkdirs() }
+            val pRef = SuiteFileRef(p.absolutePath, p.name)
+            assertTrue(a.archiveSave(pRef, "Laptop", created = true))
+            a.setSuiteFile(pRef)
+            assertTrue(a.archiveUnsavedAreas().isEmpty(), "saved: " + a.archiveUnsavedAreas())
+            // The main screen: the vaults and their settings, then a look at each area.
+            val state = de.danerd.ghulsuite.ui.AppState(a, scope)
+            val vaults = a.listVaults()
+            state.loadAreaOptions(vaults.map { it.kind }.distinct())
+            for (v in vaults) a.areaOptions(v.kind)
+            assertEquals(defaults.map { it.first }, a.cal.calendars().map { it.name }, "the usual calendars from the start")
+            assertFalse(state.calFirstLook(a.cal.calendars(), defaults, vaults.first { it.kind == VaultKindUi.CAL }), "nothing made at the first look")
+            for (v in vaults.filter { it.kind != VaultKindUi.CAL && it.kind != VaultKindUi.DOCS }) a.listEntries(v.id)
+            assertFalse(a.archiveUnsaved(), "unsaved: " + a.archiveUnsavedAreas())
+            assertTrue(a.archiveUnsavedAreas().isEmpty())
+        } finally {
+            scope.coroutineContext[kotlinx.coroutines.Job]?.cancel()
             dir.deleteRecursively()
         }
     }

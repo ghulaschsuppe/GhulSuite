@@ -207,13 +207,16 @@ actual fun rememberChooseSafePlace(onResult: (SafePlaceResult) -> Unit): ((fileN
                     val docId = "$treeId/$fileName"
                     // Review N2: a file of that name, or what a cut off swap left (.alt, .neu),
                     // counts as there; so does a folder that cannot be asked.
-                    fun there(id: String) = runCatching {
+                    // Device test: asking for a missing document by its id fails on the device's
+                    // storage (it is "not a child" of the folder), so the folder's list is read
+                    // instead; only a list that cannot be read counts as "there".
+                    val names = runCatching {
                         context.contentResolver.query(
-                            android.provider.DocumentsContract.buildDocumentUriUsingTree(uri, id),
-                            arrayOf(android.provider.DocumentsContract.Document.COLUMN_DOCUMENT_ID), null, null, null,
-                        )?.use { it.moveToFirst() } == true
-                    }.getOrDefault(true)
-                    val exists = there(docId) || there("$docId.alt") || there("$docId.neu")
+                            android.provider.DocumentsContract.buildChildDocumentsUriUsingTree(uri, treeId),
+                            arrayOf(android.provider.DocumentsContract.Document.COLUMN_DISPLAY_NAME), null, null, null,
+                        )?.use { c -> buildSet { while (c.moveToNext()) c.getString(0)?.let { add(it.lowercase()) } } }
+                    }.getOrNull()
+                    val exists = names == null || listOf(fileName, "$fileName.alt", "$fileName.neu").any { it.lowercase() in names }
                     // Kept as the document's own address: the backend finds the shared folder for it.
                     val ref = de.danerd.ghulsuite.model.SuiteFileRef(android.provider.DocumentsContract.buildDocumentUri(authority, docId).toString(), fileName)
                     val release = {

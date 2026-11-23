@@ -235,6 +235,24 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
     var calSearchTick by mutableStateOf(0)
     /** The first calendar vault was created in this session (only once). */
     var calSetupDone = false
+
+    /**
+     * The first look at GhulCal with [cals] loaded: a GhulCal file without calendars (made by an
+     * older version) gets the usual calendars ([defaults]) once; true then. A new file has them
+     * from the start (prepareNewArea, before the suite file of a new suite is written), so a new
+     * suite is not "unsaved" by a look at it. Without a GhulCal file nothing is created: the area
+     * is set up in Options, Areas.
+     */
+    internal suspend fun calFirstLook(
+        cals: List<de.danerd.ghulsuite.model.CalCalendarUi>,
+        defaults: List<Pair<String, Int>>,
+        calVault: VaultUi? = vaultsOf(VaultKindUi.CAL).firstOrNull { it.available },
+    ): Boolean {
+        if (cals.isNotEmpty() || calVault == null || calSetupDone) return false
+        calSetupDone = true
+        catching { for ((n, c) in defaults) backend.cal.saveCalendar(de.danerd.ghulsuite.model.CalCalendarUi("", calVault.id, n, c, 15, 0)) }
+        return true
+    }
     /** Calendars of all calendar vaults (refreshed with the vaults). */
     var calendars by mutableStateOf<List<de.danerd.ghulsuite.model.CalCalendarUi>>(emptyList())
     val calNames: Map<String, String> get() = calendars.associate { it.id to it.name }
@@ -986,9 +1004,9 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
      * Takes over the settings stored in the area files. Settings an area's file does not have yet
      * are filled in once from this device (suites from before #24).
      */
-    private suspend fun loadAreaOptions() {
+    internal suspend fun loadAreaOptions(kinds: List<VaultKindUi> = vaults.map { it.kind }.distinct()) {
         val st = backend.settings
-        for (kind in vaults.map { it.kind }.distinct()) {
+        for (kind in kinds) {
             val stored = catching { backend.areaOptions(kind) }.getOrNull() ?: continue
             st.applyArea(stored)
             val missing = st.deviceValues(kind).filterKeys { it !in stored }
