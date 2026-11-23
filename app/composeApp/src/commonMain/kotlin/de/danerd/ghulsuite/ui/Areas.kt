@@ -171,6 +171,7 @@ internal fun AreaSheet(state: AppState, kind: VaultKindUi, onDismiss: () -> Unit
         )
         LaunchedEffect(kind) { name = defaultName }
         val done = stringResource(Res.string.area_set_up_msg, title)
+        val calDefaults = calDefaultCalendars()
         GhulSheet(onDismiss, stringResource(Res.string.area_set_up_title, title)) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
                 IconTile(tabIcon(a.tab), areaColor(a.tab), size = 56.dp)
@@ -181,7 +182,10 @@ internal fun AreaSheet(state: AppState, kind: VaultKindUi, onDismiss: () -> Unit
             }
             ErrorText(error)
             Button(onClick = {
-                state.run(onError = { error = it }, block = { state.backend.addArea(kind, if (kind in NAMED_AREAS) name else "") }) {
+                state.run(onError = { error = it }, block = {
+                    state.backend.addArea(kind, if (kind in NAMED_AREAS) name else "")
+                    de.danerd.ghulsuite.model.prepareNewArea(state.backend, kind, calDefaults)
+                }) {
                     showModule(state, kind, true)
                     state.message(done)
                     state.changed()

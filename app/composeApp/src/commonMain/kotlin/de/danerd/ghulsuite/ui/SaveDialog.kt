@@ -221,13 +221,20 @@ fun SaveSuiteDialog(state: AppState) {
     // Android (device test): one step to a safe place: choose or create a folder, the app keeps
     // the right to it and saves the suite file there (new file next to the old, then swapped).
     var placeRefused by androidx.compose.runtime.remember { mutableStateOf<Boolean?>(null) }
+    var placeTaken by androidx.compose.runtime.remember { mutableStateOf(false) }
     val chooseSafePlace = rememberChooseSafePlace { r ->
         when (r) {
             is SafePlaceResult.Chosen -> {
                 placeRefused = null
+                placeTaken = false
                 if (state.saveJob != null || state.saveStep == SaveStep.Checking) {
                     // A save runs already (this one would be dropped): the folder is not taken.
                     r.release()
+                } else if (backend.suiteFile() == null && r.exists) {
+                    // The first suite file (as in the wizard, step 8): a file of that name there
+                    // already is another one (no suite file of this suite exists yet): not taken.
+                    r.release()
+                    placeTaken = true
                 } else {
                     state.releasePendingPlace()
                     state.pendingPlace = r.ref
@@ -255,6 +262,17 @@ fun SaveSuiteDialog(state: AppState) {
                 if (target == null) {
                     // Opened with the code from a file: that file is no place to save to (M11).
                     Text(stringResource(if (state.recoveredOpen) Res.string.file_opened_by_code else Res.string.save_no_file))
+                    if (placeTaken) Text(stringResource(Res.string.safe_place_taken), color = warnColor())
+                    placeRefused?.let { Text(stringResource(if (it) Res.string.safe_place_refused else Res.string.safe_place_other_app), color = warnColor()) }
+                    // Android: the safe place first (a folder kept for the app, so later saves
+                    // are safe there too); "Save as" (one file, no folder) only next to it, as in
+                    // step 8 of the wizard. Before, only "Choose a place" (Save as) was offered
+                    // here, and the next save asked for the safe place again.
+                    if (chooseSafePlace != null) {
+                        Button(onClick = { chooseSafePlace(SUITE_FILE_NAME) }, modifier = Modifier.fillMaxWidth().testTag(SAFE_PLACE_TAG)) {
+                            Text(stringResource(Res.string.safe_place_choose))
+                        }
+                    }
                 } else {
                     Text(stringResource(Res.string.save_ask))
                     Hint(stringResource(Res.string.save_file, target.name))
@@ -306,7 +324,7 @@ fun SaveSuiteDialog(state: AppState) {
                 }
                 if (filePickersAvailable) {
                     OutlinedButton(onClick = { saveAs(target?.name ?: SUITE_FILE_NAME) }, modifier = Modifier.fillMaxWidth()) {
-                        Text(stringResource(if (target == null) Res.string.save_place else Res.string.file_save_as))
+                        Text(stringResource(if (target == null && chooseSafePlace == null) Res.string.save_place else Res.string.file_save_as))
                     }
                 }
                 OutlinedButton(onClick = { state.closeSaveDialog() }, modifier = Modifier.fillMaxWidth()) {

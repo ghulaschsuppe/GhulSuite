@@ -277,6 +277,16 @@ fun calHidden(hidden: Set<String>, o: CalOccurrenceUi): Boolean {
     return hidden.any { k -> k.startsWith(from) && Day.parse(k.removePrefix(from))?.let { o.startDay >= it } == true }
 }
 
+/** The usual calendars of a new GhulCal file (names in the language of the app, colours). */
+@Composable
+fun calDefaultCalendars(): List<Pair<String, Int>> = listOf(
+    stringResource(Res.string.cal_def_private) to 0xD6336C,
+    stringResource(Res.string.cal_def_work) to 0x2F74E8,
+    stringResource(Res.string.cal_def_family) to 0x0E9F80,
+    stringResource(Res.string.cal_def_sport) to 0xE0700F,
+    stringResource(Res.string.cal_def_birthdays) to 0x8E5BD8,
+)
+
 /** Loads what the current view shows; creates the first calendar vault on first use. */
 @Composable
 private fun rememberCalData(state: AppState, from: Day, to: Day, extraQuery: String = ""): CalData {
@@ -285,25 +295,14 @@ private fun rememberCalData(state: AppState, from: Day, to: Day, extraQuery: Str
     var data by remember { mutableStateOf(CalData(emptyList(), emptyList(), loaded = false)) }
     var retry by remember { mutableStateOf(0) }
     val lang = stringResource(Res.string.cal_lang)
-    val defaults = listOf(
-        stringResource(Res.string.cal_def_private) to 0xD6336C,
-        stringResource(Res.string.cal_def_work) to 0x2F74E8,
-        stringResource(Res.string.cal_def_family) to 0x0E9F80,
-        stringResource(Res.string.cal_def_sport) to 0xE0700F,
-        stringResource(Res.string.cal_def_birthdays) to 0x8E5BD8,
-    )
+    val defaults = calDefaultCalendars()
     val rev = state.liveRevision()
     LaunchedEffect(rev, from, to, settings.calHidden, settings.calHolidays, settings.calRegion, extraQuery, retry) {
         val cals = catching { cal.calendars() }.getOrElse { e ->
             data = CalData(data.calendars, data.occ, describe(e), retry = { retry++ })
             return@LaunchedEffect
         }
-        // A new GhulCal file (chosen in the setup or under Areas) gets the usual calendars once.
-        // Without a GhulCal file nothing is created: the area is set up in Options → Areas.
-        val calVault = state.vaultsOf(VaultKindUi.CAL).firstOrNull { it.available }
-        if (cals.isEmpty() && calVault != null && !state.calSetupDone) {
-            state.calSetupDone = true
-            catching { for ((n, c) in defaults) cal.saveCalendar(CalCalendarUi("", calVault.id, n, c, 15, 0)) }
+        if (state.calFirstLook(cals, defaults)) {
             state.changed()
             return@LaunchedEffect
         }

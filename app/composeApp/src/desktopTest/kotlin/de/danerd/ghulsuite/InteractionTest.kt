@@ -1673,7 +1673,10 @@ class InteractionTest {
         waitUntil(timeoutMillis = 10_000) { tagged(SAVE_BUTTON_TAG) }
         runOnIdle { state.askSave() }
         waitUntil(timeoutMillis = 10_000) { part("There is no suite file yet.") }
+        // Desktop: no safe place to choose (Android shows it first, with "Save as" next to it).
         assertEquals(de.danerd.ghulsuite.ui.filePickersAvailable, shown("Choose a place …"))
+        assertFalse(tagged(de.danerd.ghulsuite.ui.SAFE_PLACE_TAG))
+        assertFalse(shown("Save as …"))
         shot("save-no-file")
     }
 

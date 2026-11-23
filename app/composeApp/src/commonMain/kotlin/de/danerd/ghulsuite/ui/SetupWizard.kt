@@ -235,6 +235,7 @@ fun NewSuiteWizard(state: AppState, onCancel: () -> Unit) {
         }
     }
 
+    val calDefaults = calDefaultCalendars()
     /** Creates the chosen area files (and removes those switched off again), then step 5. */
     fun applyAreas() {
         state.run(onError = { error = it }, block = {
@@ -243,6 +244,9 @@ fun NewSuiteWizard(state: AppState, onCancel: () -> Unit) {
                 if (on && made[a.kind] != true) {
                     val name = if (a.kind in NAMED_AREAS) areaName[a.kind].orEmpty() else ""
                     backend.addArea(a.kind, name)
+                    // What the file holds from the start goes in now, before the suite file is
+                    // written (else the first look at the area made it "unsaved").
+                    de.danerd.ghulsuite.model.prepareNewArea(backend, a.kind, calDefaults)
                     made[a.kind] = true
                 } else if (!on && made[a.kind] == true) {
                     backend.removeArea(a.kind)
