@@ -200,6 +200,14 @@ private fun MainScreen(state: AppState, wide: Boolean, width: Dp) {
     var addTotpFor by remember { mutableStateOf<String?>(null) }
     val top = state.stack.lastOrNull()
     val tabs = state.tabs
+    // Review N-2: once per unlock, a key without a backup is asked about (not only on its page).
+    LaunchedEffect(state.backend.lockCount) {
+        state.keyWithoutBackup = if (state.single == null && !state.backend.openedWithRecoveryCode()) {
+            catching { protectionOf(state.backend.slots()).needsBackup }.getOrDefault(false)
+        } else {
+            false
+        }
+    }
     // An area that is gone (removed, another suite): the first one, after this composition.
     LaunchedEffect(tabs) { if (state.tab !in tabs) state.tab = tabs.first() }
     // Tabs opened since unlocking; a plain set, read together with state.tab.
@@ -211,6 +219,8 @@ private fun MainScreen(state: AppState, wide: Boolean, width: Dp) {
     LaunchedEffect(state.tab) { focusManager.clearFocus(force = true) }
     if (state.codeUnconfirmed && top !is Screen.RecoveryCode) CodeReminderDialog(state)
     else if (state.saveAfterProtection && top !is Screen.RecoveryCode) SaveAfterProtectionDialog(state)
+    // Review N-b (factors): after the other questions of the unlock, not on top of them.
+    else if (state.keyWithoutBackup && top !is Screen.RecoveryCode && state.oldSuiteFile == null && state.saveTargetOffer == null) NoBackupDialog(state)
     // A new recovery code cannot be skipped: it must be confirmed first.
     PlatformBackHandler(enabled = top != null && top !is Screen.RecoveryCode) { state.back() }
     UpdateDialog(state)

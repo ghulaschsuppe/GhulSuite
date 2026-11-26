@@ -137,6 +137,30 @@ interface VaultBackend {
     suspend fun newRecoveryCode(proof: FactorProofUi, label: String, onTouchNeeded: () -> Unit): String
     /** Removes a security key or key file (not the last one). */
     suspend fun removeSlot(proof: FactorProofUi, id: String, onTouchNeeded: () -> Unit)
+    /**
+     * The protection of now, checked before a change of the second factors. With a key (its
+     * PIN in [proof]) it is touched here, and the change that follows ([replaceFactors]) needs
+     * the password alone once, within two minutes. With a key file only the password is
+     * checked: the key file confirms the change itself.
+     */
+    suspend fun confirmProtection(proof: FactorProofUi, onTouchNeeded: () -> Unit) {}
+
+    /**
+     * Replaces second factors: [add] are set up in this order, then [remove] (slot ids) go and
+     * no longer open anything saved from now on. Called after [confirmProtection] with the same
+     * [proof]. The apps do it with the core's one-step change (an abort leaves the old or the new
+     * state); this default (add and remove one by one) is for test backends.
+     */
+    suspend fun replaceFactors(proof: FactorProofUi, add: List<NewFactorUi>, remove: List<String>, onTouchNeeded: () -> Unit) {
+        for (f in add) {
+            when (f) {
+                is NewFactorUi.Key -> addSecurityKey(proof, f.pin, f.label, onTouchNeeded)
+                is NewFactorUi.Keyfile -> addKeyfile(proof, f.data, f.label, onTouchNeeded)
+            }
+        }
+        for (id in remove) removeSlot(proof, id, onTouchNeeded)
+    }
+
     /** [proof]: the current password plus a key or key file of now. */
     suspend fun changePassword(proof: FactorProofUi, new: String, onTouchNeeded: () -> Unit)
 
@@ -494,6 +518,15 @@ data class SecurityRulesUi(val passwordMinLength: Int = 10, val passwordMinScore
 
 /** Both factors of now, before a change of the protection: the master password plus the PIN of a key ([pin]) or a key file. */
 class FactorProofUi(val password: String, val pin: String?, val keyfile: ByteArray?)
+
+/** A second factor to set up (see [VaultBackend.replaceFactors]). */
+sealed class NewFactorUi {
+    abstract val label: String
+    /** A security key, registered with [pin] (touched when it is set up). */
+    class Key(val pin: String, override val label: String) : NewFactorUi()
+    /** A key file just made and saved by the user. */
+    class Keyfile(val data: ByteArray, override val label: String) : NewFactorUi()
+}
 
 /** The file at the place a suite is saved to: how it relates, and who saved it when ([device] empty, [time] 0: not known). */
 /** [readable]: the keys of now open the file (false also when not known). */

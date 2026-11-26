@@ -249,6 +249,27 @@ fun CodeReminderDialog(state: AppState) {
  * After a change of the protection the suite file must be saved and older copies (other devices,
  * sticks, backups) deleted: they still open with the old protection.
  */
+/** Review N-2: the key has no backup: straight to "Set up a backup" on Options, Keys and key files. */
+@Composable
+fun NoBackupDialog(state: AppState) {
+    AlertDialog(
+        onDismissRequest = { state.keyWithoutBackup = false },
+        icon = { Icon(Icons.Filled.Warning, null, tint = warnColor()) },
+        title = { Text(stringResource(Res.string.fac_no_backup_title)) },
+        text = { Text(stringResource(Res.string.set_key_no_backup)) },
+        confirmButton = {
+            TextButton(onClick = {
+                state.keyWithoutBackup = false
+                state.pendingFactorTask = FactorTask.AddBackup
+                state.push(Screen.SettingsPage(SetPage.FACTORS))
+            }, modifier = Modifier.testTag("no-backup-setup")) { Text(stringResource(Res.string.fac_setup_backup)) }
+        },
+        dismissButton = {
+            TextButton(onClick = { state.keyWithoutBackup = false }) { Text(stringResource(Res.string.a_later)) }
+        },
+    )
+}
+
 @Composable
 fun SaveAfterProtectionDialog(state: AppState) {
     AlertDialog(

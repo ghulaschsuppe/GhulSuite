@@ -342,12 +342,33 @@ class ScreenshotTest {
         override suspend fun parseOtpauth(uri: String) = TotpInputUi("", "", "")
         override suspend fun renameTotp(vaultId: String, id: String, issuer: String, account: String) {}
         override suspend fun deleteTotp(vaultId: String, id: String) { calls += "deleteTotp:$vaultId:$id" }
-        override suspend fun slots() = listOf(
+        var slotList = listOf(
             SlotUi("k", SlotType.SECURITY_KEY, "Key am Schlüsselbund", 1_762_800_000_000),
             SlotUi("f", SlotType.KEYFILE, "USB-Stick", 1_762_800_000_000),
             SlotUi("c", SlotType.RECOVERY_CODE, "Wiederherstellungscode", 1_762_800_000_000),
         )
-        override suspend fun addSecurityKey(proof: de.danerd.ghulsuite.model.FactorProofUi, pin: String, label: String, onTouchNeeded: () -> Unit) {}
+        override suspend fun slots() = slotList
+        /** The next key added is the same key again (refused once). */
+        var sameKeyOnce = false
+        override suspend fun addSecurityKey(proof: de.danerd.ghulsuite.model.FactorProofUi, pin: String, label: String, onTouchNeeded: () -> Unit) {
+            if (sameKeyOnce) {
+                sameKeyOnce = false
+                throw de.danerd.ghulsuite.model.VaultException(de.danerd.ghulsuite.model.VaultErrorKind.ALREADY_EXISTS)
+            }
+            calls += "addSecurityKey"
+        }
+        override suspend fun confirmProtection(proof: de.danerd.ghulsuite.model.FactorProofUi, onTouchNeeded: () -> Unit) { calls += "confirmProtection" }
+        override suspend fun replaceFactors(
+            proof: de.danerd.ghulsuite.model.FactorProofUi,
+            add: List<de.danerd.ghulsuite.model.NewFactorUi>,
+            remove: List<String>,
+            onTouchNeeded: () -> Unit,
+        ) {
+            calls += "replaceFactors:" + add.joinToString(",") { if (it is de.danerd.ghulsuite.model.NewFactorUi.Key) "key" else "keyfile" } + ":" + remove.joinToString(",")
+            replaceFails.removeFirstOrNull()?.let { throw it }
+        }
+        /** Errors of the next calls of [replaceFactors], one each. */
+        val replaceFails = mutableListOf<de.danerd.ghulsuite.model.VaultException>()
         override suspend fun addKeyfile(proof: de.danerd.ghulsuite.model.FactorProofUi, keyfile: ByteArray, label: String, onTouchNeeded: () -> Unit) {}
         override suspend fun newRecoveryCode(proof: de.danerd.ghulsuite.model.FactorProofUi, label: String, onTouchNeeded: () -> Unit) = ""
         override suspend fun removeSlot(proof: de.danerd.ghulsuite.model.FactorProofUi, id: String, onTouchNeeded: () -> Unit) {}

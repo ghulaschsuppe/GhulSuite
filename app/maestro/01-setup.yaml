@@ -25,12 +25,9 @@ name: Setup
 - hideKeyboard
 - takeScreenshot: 01-password
 - tapOn: "Next"
-# Step 2: second factor: key file. The option itself, by its text: with a key chosen, a chip
-# "Key file" (the key's backup) stands above it.
-- scrollUntilVisible:
-    element: "A small file you keep.*"
-    direction: DOWN
-- tapOn: "A small file you keep.*"
+# Step 2: second factor: key file. Both choices stand at the top; the key file by its text
+# (below them, a chosen key shows its backup chips, one of them "Key file").
+- tapOn: "A small file you keep safe"
 - scrollUntilVisible:
     element: "Create and save key file"
     direction: DOWN

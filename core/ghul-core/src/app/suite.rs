@@ -1731,7 +1731,7 @@ impl GhulSuite {
     }
 
     /// Copies a new factor slot (created in the suite) into every vault and saves all.
-    fn insert_everywhere(&self, o: &mut Open, slot: Slot, label: &str, now: i64) -> Result<()> {
+    pub(super) fn insert_everywhere(&self, o: &mut Open, slot: Slot, label: &str, now: i64) -> Result<()> {
         for v in &mut o.vaults {
             if let Some(c) = v.container.as_mut() {
                 c.insert_slot(slot.clone(), label, now)?;
