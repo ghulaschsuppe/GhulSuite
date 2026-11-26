@@ -158,6 +158,30 @@ fn every_protection_change_with_the_password_alone_is_refused() {
     drop(d);
 }
 
+/// N-c: the clock of the confirmation never goes back, moves on with real time and, on Linux
+/// and Android, counts sleep (CLOCK_BOOTTIME, never behind CLOCK_MONOTONIC).
+#[test]
+fn the_clock_of_the_confirmation_moves_on() {
+    use super::super::suite::boot_millis;
+    let mut last = boot_millis();
+    for _ in 0..1000 {
+        let now = boot_millis();
+        assert!(now >= last, "{now} < {last}");
+        last = now;
+    }
+    let before = boot_millis();
+    std::thread::sleep(std::time::Duration::from_millis(30));
+    assert!(boot_millis() >= before + 25);
+    #[cfg(any(target_os = "linux", target_os = "android"))]
+    {
+        // SAFETY: an all-zero `timespec` is valid; `ts` is a valid out-buffer.
+        let mut ts: libc::timespec = unsafe { std::mem::zeroed() };
+        assert_eq!(unsafe { libc::clock_gettime(libc::CLOCK_MONOTONIC, &mut ts) }, 0);
+        let monotonic = ts.tv_sec as u64 * 1000 + ts.tv_nsec as u64 / 1_000_000;
+        assert!(boot_millis() >= monotonic, "boot time includes the monotonic time");
+    }
+}
+
 /// H13: a confirmation of both factors holds two minutes (a test clock moves it on).
 #[test]
 fn a_confirmation_holds_two_minutes() {

@@ -706,7 +706,8 @@ pub struct GhulSuite {
     pub(super) docs_adds: std::sync::atomic::AtomicUsize,
     /// Both factors were shown a moment ago (`confirm_factors`, or the suite was just created):
     /// the next change of the protection needs the password alone, once (see `require_factors`).
-    pub(super) factors_confirmed: Mutex<Option<std::time::Instant>>,
+    /// The time of it on [`boot_millis`], a clock that counts sleep.
+    pub(super) factors_confirmed: Mutex<Option<u64>>,
 }
 
 /// How containers of the folder are opened.
@@ -936,12 +937,34 @@ pub(super) fn run_lock_hook() {
     }
 }
 
-/// How long ago a confirmation of both factors was given.
-fn ticket_age(t: std::time::Instant) -> std::time::Duration {
+/// Milliseconds of a clock that keeps counting while the device sleeps (N-c): on Linux and
+/// Android `CLOCK_BOOTTIME` (`Instant` is `CLOCK_MONOTONIC` there, which stops in deep sleep,
+/// so a confirmation would outlive a night with the screen off). Elsewhere `Instant` (on
+/// Windows it counts sleep as well), from the first call. Only differences of two values mean
+/// anything; it never goes back.
+pub(crate) fn boot_millis() -> u64 {
+    #[cfg(any(target_os = "linux", target_os = "android"))]
+    {
+        // SAFETY: an all-zero `timespec` is valid; `ts` is a valid out-buffer for `clock_gettime`.
+        let mut ts: libc::timespec = unsafe { std::mem::zeroed() };
+        if unsafe { libc::clock_gettime(libc::CLOCK_BOOTTIME, &mut ts) } == 0 {
+            let secs = u64::try_from(ts.tv_sec).unwrap_or(0);
+            let nanos = u64::try_from(ts.tv_nsec).unwrap_or(0);
+            return secs.saturating_mul(1000).saturating_add(nanos / 1_000_000);
+        }
+    }
+    static START: std::sync::OnceLock<std::time::Instant> = std::sync::OnceLock::new();
+    START.get_or_init(std::time::Instant::now).elapsed().as_millis() as u64
+}
+
+/// How long ago a confirmation of both factors was given (`t`: [`boot_millis`] then).
+fn ticket_age(t: u64) -> std::time::Duration {
+    // A clock that went back (it should not) counts as expired, never as "just now".
+    let age = boot_millis().checked_sub(t).map_or(std::time::Duration::MAX, std::time::Duration::from_millis);
     #[cfg(test)]
-    return t.elapsed() + CLOCK_SHIFT.with(std::cell::Cell::get);
+    return age.saturating_add(CLOCK_SHIFT.with(std::cell::Cell::get));
     #[cfg(not(test))]
-    t.elapsed()
+    age
 }
 
 /// In the device's own folder: older copies of containers are still to be removed (see
@@ -1931,7 +1954,7 @@ impl GhulSuite {
         self.save_all(&mut open)?;
         self.set_open(open, gen)?;
         // Both factors were just used: the backup of a key may follow with the password alone.
-        self.set_ticket(backup_follows.then(std::time::Instant::now), gen)?;
+        self.set_ticket(backup_follows.then(boot_millis), gen)?;
         Ok(SetupResult { recovery_code: Some(code.to_display().to_string()) })
     }
 
@@ -3005,7 +3028,7 @@ impl GhulSuite {
         *self.factors_confirmed.lock().unwrap_or_else(|e| e.into_inner()) = None;
         self.require_factors(&proof, transport.as_ref(), listener.as_ref())?;
         // Not kept if the suite was locked meanwhile (H10).
-        self.set_ticket(Some(std::time::Instant::now()), gen)
+        self.set_ticket(Some(boot_millis()), gen)
     }
 
     pub fn verify_password(&self, password: String) -> Result<bool> {
@@ -3068,7 +3091,7 @@ impl GhulSuite {
 
     /// Keeps (or clears) the confirmation of both factors, unless the suite was locked since the
     /// call started (`gen`): then it is not kept and the call ends with `Locked` (H10).
-    pub(super) fn set_ticket(&self, t: Option<std::time::Instant>, gen: Gen) -> Result<()> {
+    pub(super) fn set_ticket(&self, t: Option<u64>, gen: Gen) -> Result<()> {
         #[cfg(test)]
         run_lock_hook();
         let mut ticket = self.factors_confirmed.lock().unwrap_or_else(|e| e.into_inner());
