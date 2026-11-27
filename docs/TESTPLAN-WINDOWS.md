@@ -93,7 +93,7 @@ gespeichert wurde. Alle Rückfragen sind dieselben wie im Android-Plan, Abschnit
 | Nr. | Schritt | Erwartet |
 |---|---|---|
 | WX1 | Am Handy die Suite-Datei auf den USB-Stick speichern. Unter Windows (ohne Suite) „Suite-Datei öffnen“ → die Datei auf dem Stick. | Entsperren mit **demselben** Security Key klappt unter Windows (Windows-Fenster). Fortschritt beim Öffnen; alle Einträge, Dokumente (auch die gescannten PDFs vom Handy) und Einstellungen sind da. |
-| WX2 | Unter Windows einen zweiten Key hinzufügen (Optionen → Keys & Schlüsseldateien → Security Key hinzufügen), speichern, am Handy die Datei öffnen, sperren und mit diesem Key entsperren. | Klappt, Keys sind zwischen Android und Windows austauschbar. |
+| WX2 | Unter Windows den Backup-Key austauschen (Optionen → Keys und Schlüsseldateien → „Austauschen“ am Backup, neuer Key), speichern, am Handy die Datei öffnen, sperren und mit diesem Key entsperren. | Klappt, Keys sind zwischen Android und Windows austauschbar. |
 | WX3 | Unter Windows etwas ändern, nicht speichern. | Hinweis „Nicht gespeicherte Änderungen. Tippen zum Speichern.“ auf den Bereichsseiten. Nach „Speichern“ verschwindet er. |
 | WX4 | Am Handy etwas ändern und speichern, unter Windows dieselbe Datei öffnen (Windows hat selbst nichts Ungespeichertes). | Öffnet ohne Rückfrage; die Änderung vom Handy ist da. |
 | WX5 | Unter Windows etwas ändern (nicht speichern), dann die Datei vom Handy öffnen. | Rückfrage nennt die nicht gespeicherten Änderungen, die verloren gehen; „Abbrechen“ lässt alles, wie es ist. |
@@ -204,7 +204,7 @@ anders:
 
 | Nr. | Schritt | Erwartet |
 |---|---|---|
-| WG6 | **Handy als Key** (Windows 11 mit einem Handy in der Nähe): Optionen → Keys und Schlüsseldateien → Security Key hinzufügen, im Windows-Dialog „Anderes Gerät verwenden“ bzw. das Handy wählen und dort bestätigen. Danach mit einem echten Key über USB, wenn vorhanden auch über NFC. | Das Handy wird abgelehnt: „Nur ein Key (Sicherheitsschlüssel) über USB oder NFC lässt sich hinzufügen …“, nichts eingetragen. USB und NFC gehen (GP-M21; bisher nur in der Windows-CI gebaut). |
+| WG6 | **Handy als Key** (Windows 11 mit einem Handy in der Nähe): Optionen → Keys und Schlüsseldateien → „Austauschen“ am Backup (neuer Key), im Windows-Dialog „Anderes Gerät verwenden“ bzw. das Handy wählen und dort bestätigen. Danach mit einem echten Key über USB, wenn vorhanden auch über NFC. | Das Handy wird abgelehnt: „Nur ein Key (Sicherheitsschlüssel) über USB oder NFC lässt sich hinzufügen …“, nichts eingetragen. USB und NFC gehen (GP-M21; bisher nur in der Windows-CI gebaut). |
 | WG7 | **Key unter Windows anlegen, auf Android öffnen:** wie WX2, mit einer Suite, deren einziger zweiter Faktor dieser unter Windows angelegte Key ist (Schlüsseldatei als Backup vorher beiseitelegen). | Am Handy entsperrt der Key; bliebe es bei „falscher Key“, hätte Windows das Salz anders behandelt (Runde 9, Krypto N4). Dann das Backup nehmen und die Nummer melden. |
 | WG8 | **Sperre nach dem Ruhezustand:** GhulSuite entsperrt lassen, den Laptop zuklappen bzw. „Energie sparen“, nach einer Minute wieder aufwecken. | Beim Aufwachen sofort gesperrt. (Vor dem Einschlafen kann die App nicht sperren: vor dem Zuklappen am besten selbst sperren.) |
 | WG9 | **Aufschub durch ungespeicherte Eingabe:** einen Eintrag bearbeiten, etwas tippen, nicht speichern, Fenster vorn lassen (Auto-Sperre „1 Minute“). | Nach etwa 14 Minuten „Ohne Eingabe sperrt GhulSuite in etwa einer Minute …“, nach 15 Minuten gesperrt; die Eingabe ist verloren. |

@@ -100,6 +100,8 @@ private val CORE_TEXTS: Map<String, StringResource> = mapOf(
     "Steam codes have 5 characters" to Res.string.core_steam,
     "issuer or account is required" to Res.string.core_issuer,
     "recovery codes are replaced, not removed" to Res.string.core_code_replace,
+    "nothing to change" to Res.string.core_nothing_to_change,
+    "a new security key needs its connection" to Res.string.core_new_key_connection,
     "a security key or key file is required" to Res.string.core_factor_req,
     "key and PIN must be given together" to Res.string.core_key_pin_pair,
     "a PIN is already set" to Res.string.core_pin_set,

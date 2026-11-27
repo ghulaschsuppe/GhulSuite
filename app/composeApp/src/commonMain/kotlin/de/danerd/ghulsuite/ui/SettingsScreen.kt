@@ -121,7 +121,7 @@ fun SettingsPageScreen(state: AppState, page: SetPage, padding: PaddingValues) {
     val backend = state.backend
     val settings = backend.settings
     var slots by remember { mutableStateOf<List<SlotUi>>(emptyList()) }
-    var addKey by remember { mutableStateOf(false) }
+    var factorTask by remember { mutableStateOf<FactorTask?>(null) }
     var newCode by remember { mutableStateOf(false) }
     var removing by remember { mutableStateOf<SlotUi?>(null) }
     // H6: quick unlock is set up with both factors and a validity that is fixed in its file:
@@ -132,14 +132,13 @@ fun SettingsPageScreen(state: AppState, page: SetPage, padding: PaddingValues) {
     // M14: a change that weakens the protection waits here for the master password.
     var weaken by remember { mutableStateOf<Pair<String, () -> Unit>?>(null) }
     var ready by remember { mutableStateOf(backend.quickUnlockReady()) }
-    var keyfileDialog by remember { mutableStateOf(false) }
 
     LaunchedEffect(state.liveRevision()) {
         slots = catching { backend.slots() }.getOrDefault(emptyList())
+        // Review N-2: opened from the question about a key without a backup: its flow at once.
+        if (page == SetPage.FACTORS && slots.isNotEmpty()) state.pendingFactorTask?.let { factorTask = it; state.pendingFactorTask = null }
         ready = backend.quickUnlockReady()
     }
-    val keyCount = slots.count { it.type == SlotType.SECURITY_KEY }
-    val factorCount = slots.count { it.type != SlotType.RECOVERY_CODE }
 
     Column(Modifier.padding(padding)) {
         ScreenColumn {
@@ -242,50 +241,55 @@ fun SettingsPageScreen(state: AppState, page: SetPage, padding: PaddingValues) {
 
                 }
                 SetPage.FACTORS -> {
+            val view = protectionOf(slots)
             SectionCard(stringResource(Res.string.set_keys)) {
-                Hint(stringResource(Res.string.set_keys_hint))
-                // A key without a backup (a suite from before the backup was required): said plainly.
-                if (keyCount > 0 && factorCount < 2) Banner(Icons.Filled.Warning, stringResource(Res.string.set_key_no_backup))
-                for (s in slots) {
-                    ListRow(
-                        s.label.ifBlank { stringResource(typeLabel(s.type)) },
-                        stringResource(typeLabel(s.type)) + (if (s.created > 0) " · " + formatDate(s.created) else ""),
-                        leading = {
-                            IconTile(
-                                when (s.type) {
-                                    SlotType.SECURITY_KEY -> Icons.Filled.Key
-                                    SlotType.RECOVERY_CODE -> Icons.Filled.Description
-                                    SlotType.KEYFILE -> Icons.Filled.InsertDriveFile
-                                },
-                                paletteColor(0),
-                            )
-                        },
-                        trailing = {
-                            if (s.type != SlotType.RECOVERY_CODE && factorCount > 1) {
-                                BarIcon(Icons.Filled.Delete, stringResource(Res.string.a_delete), tint = g.danger) { removing = s }
-                            }
-                        },
-                        divider = s != slots.first(), flush = true,
-                    )
+                // What protects the suite now, said plainly.
+                view.main?.let { m ->
+                    val mainName = stringResource(slotTypeLabel(m.type))
+                    val what = view.backups.firstOrNull()?.takeIf { view.keyMain }?.let {
+                        stringResource(Res.string.fac_summary_both, mainName, stringResource(slotTypeLabel(it.type)))
+                    } ?: mainName
+                    Text(stringResource(Res.string.fac_summary, what), fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold, modifier = Modifier.testTag("factor-summary"))
                 }
-                if (keyCount == 0) {
-                    Text(stringResource(Res.string.set_no_key_hint), color = warnColor(), style = MaterialTheme.typography.bodyMedium)
-                } else if (factorCount < 2) {
-                    Text(stringResource(Res.string.set_backup_key_hint), color = warnColor(), style = MaterialTheme.typography.bodyMedium)
-                }
-                OutlinedButton(onClick = { addKey = true }, modifier = Modifier.fillMaxWidth()) { Text(stringResource(Res.string.a_add_key)) }
-                if (filePickersAvailable) {
-                    OutlinedButton(onClick = { keyfileDialog = true }, modifier = Modifier.fillMaxWidth()) {
-                        Text(stringResource(Res.string.a_add_keyfile))
+                // A key without a backup (a suite from before the backup was required): set one up.
+                if (view.needsBackup) {
+                    Banner(Icons.Filled.Warning, stringResource(Res.string.set_key_no_backup))
+                    Button(onClick = { factorTask = FactorTask.AddBackup }, modifier = Modifier.fillMaxWidth().testTag("factor-add-backup")) {
+                        Text(stringResource(Res.string.fac_setup_backup))
                     }
                 }
+                view.main?.let { FactorRow(it, stringResource(Res.string.fac_main), first = true) { factorTask = FactorTask.Replace(it, isMain = true) } }
+                for (b in view.backups) {
+                    if (view.keyMain) {
+                        // More than one backup (older suites): one may go, a key keeps one.
+                        FactorRow(b, stringResource(Res.string.fac_backup), onRemove = if (view.backups.size > 1) ({ removing = b }) else null) {
+                            factorTask = FactorTask.Replace(b, isMain = false)
+                        }
+                    } else {
+                        // A key file needs no backup: another key file may simply go.
+                        FactorRow(b, stringResource(Res.string.fac_extra_keyfile), onRemove = { removing = b }, onReplace = null)
+                    }
+                }
+                Hint(stringResource(if (view.keyMain) Res.string.fac_key_backup_hint else Res.string.fac_keyfile_copy))
+            }
+            if (view.main != null && (filePickersAvailable || !view.keyMain)) {
+                ListCard(Modifier.testTag("factor-switch")) {
+                    ListRow(
+                        stringResource(Res.string.fac_switch),
+                        stringResource(if (view.keyMain) Res.string.fac_switch_to_keyfile else Res.string.fac_switch_to_key),
+                        onClick = { factorTask = FactorTask.Switch },
+                    )
+                }
+            }
+            SectionCard(stringResource(Res.string.slot_code)) {
+                view.code?.let { c ->
+                    Hint(stringResource(Res.string.set_keys_hint))
+                    if (c.created > 0) Hint(formatDate(c.created))
+                }
                 OutlinedButton(onClick = { newCode = true }, modifier = Modifier.fillMaxWidth()) { Text(stringResource(Res.string.a_new_code)) }
-                Hint(stringResource(Res.string.set_swap_hint))
                 // L1: old backups still open with what was valid back then.
                 Hint(stringResource(Res.string.set_lost_hint))
             }
-
-
                 }
                 SetPage.VAULTS -> if (state.single == null) VaultsSection(state) else SingleVaultSection(state)
                 SetPage.FILE -> if (state.single != null) SingleVaultSection(state) else SuiteFileSection(state)
@@ -357,8 +361,7 @@ fun SettingsPageScreen(state: AppState, page: SetPage, padding: PaddingValues) {
         }
     }
 
-    if (addKey) AddKeyDialog(state) { addKey = false }
-    if (keyfileDialog) KeyfileDialog(state) { keyfileDialog = false }
+    factorTask?.let { t -> FactorFlowDialog(state, t, protectionOf(slots)) { factorTask = null } }
     setPin?.let { hours -> SetAppPinDialog(state, hours) { setPin = null; ready = backend.quickUnlockReady() } }
     askBioPassword?.let { hours -> BioPasswordDialog(state, hours) { askBioPassword = null; ready = backend.quickUnlockReady() } }
     if (screenshotWarning) {
@@ -422,7 +425,7 @@ private fun RemoveSlotDialog(state: AppState, s: SlotUi, onDismiss: () -> Unit) 
         title = { Text(stringResource(Res.string.set_remove_title)) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text(stringResource(Res.string.set_remove_text, s.label.ifBlank { stringResource(typeLabel(s.type)) }))
+                Text(stringResource(Res.string.set_remove_text, s.label.ifBlank { stringResource(slotTypeLabel(s.type)) }))
                 ProofFields(state, proof) { error = null }
                 BusyBanner(state)
                 ErrorText(error)
@@ -484,100 +487,25 @@ private fun SetAppPinDialog(state: AppState, hours: Int, onDismiss: () -> Unit) 
     )
 }
 
-private fun typeLabel(t: SlotType) = when (t) {
-    SlotType.SECURITY_KEY -> Res.string.slot_key
-    SlotType.RECOVERY_CODE -> Res.string.slot_code
-    SlotType.KEYFILE -> Res.string.slot_keyfile
-}
 
-/** Creates (and saves) or picks a key file and adds it as second factor. */
+/** A second factor on the page: what it is, its role, and "Replace" (and "Remove" where it may go). */
 @Composable
-private fun KeyfileDialog(state: AppState, onDismiss: () -> Unit) {
-    var keyfile by remember { mutableStateOf<ByteArray?>(null) }
-    var saved by remember { mutableStateOf(false) }
-    var error by remember { mutableStateOf<String?>(null) }
-    val failText = rememberSaveFileFailedText()
-    val save = rememberSaveFile { r ->
-        saved = r == SaveFileResult.SAVED
-        // r7 N-3: saved clears an earlier error; cancelled keeps it.
-        if (saved) error = null else failText(r)?.let { error = it }
-    }
-    val open = rememberOpenFile { file -> keyfile = file.bytes; saved = true }
-    var label by remember { mutableStateOf("") }
-    val proof = rememberProofInput(state)
-    val done = stringResource(Res.string.msg_keyfile_added)
-    AlertDialog(
-        onDismissRequest = { if (!state.busy) onDismiss() },
-        title = { Text(stringResource(Res.string.keyfile_title)) },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Hint(stringResource(Res.string.keyfile_text))
-                OutlinedButton(onClick = {
-                    val data = keyfile ?: state.backend.generateKeyfile().also { keyfile = it }
-                    save(KEYFILE_NAME, data)
-                }, modifier = Modifier.fillMaxWidth()) { Text(stringResource(Res.string.keyfile_create_save)) }
-                OutlinedButton(onClick = open, modifier = Modifier.fillMaxWidth()) { Text(stringResource(Res.string.keyfile_use_existing)) }
-                if (saved) Text(stringResource(Res.string.keyfile_ready), color = okColor())
-                OutlinedTextField(
-                    label, { label = it }, label = { Text(stringResource(Res.string.l_keyfile_label)) }, singleLine = true,
-                )
-                ProofFields(state, proof) { error = null }
-                BusyBanner(state)
-                ErrorText(error)
+private fun FactorRow(s: SlotUi, role: String, first: Boolean = false, onRemove: (() -> Unit)? = null, onReplace: (() -> Unit)?) {
+    ListRow(
+        s.label.ifBlank { stringResource(slotTypeLabel(s.type)) },
+        role + " · " + stringResource(slotTypeLabel(s.type)) + (if (s.created > 0) " · " + formatDate(s.created) else ""),
+        leading = {
+            IconTile(if (s.type == SlotType.SECURITY_KEY) Icons.Filled.Key else Icons.Filled.InsertDriveFile, paletteColor(0))
+        },
+        trailing = {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                if (onReplace != null) {
+                    TextButton(onClick = onReplace, modifier = Modifier.testTag("factor-replace-" + s.id)) { Text(stringResource(Res.string.a_replace)) }
+                }
+                if (onRemove != null) BarIcon(Icons.Filled.Delete, stringResource(Res.string.a_delete), tint = g.danger) { onRemove() }
             }
         },
-        confirmButton = {
-            TextButton(onClick = {
-                val data = keyfile ?: return@TextButton
-                state.run(onError = { error = it }, block = {
-                    state.backend.addKeyfile(proof.proof(), data, label.ifBlank { getString(Res.string.keyfile_default_label) }, state.onTouchNeeded)
-                }) {
-                    proof.clear()
-                    state.changed()
-                    state.message(done)
-                    onDismiss()
-                }
-            }, enabled = !state.busy && saved && keyfile != null && proof.ok(state)) { Text(stringResource(Res.string.a_add)) }
-        },
-        dismissButton = { TextButton(onClick = onDismiss, enabled = !state.busy) { Text(stringResource(Res.string.a_cancel)) } },
-    )
-}
-
-@Composable
-private fun AddKeyDialog(state: AppState, onDismiss: () -> Unit) {
-    var pin by remember { mutableStateOf("") }
-    var label by remember { mutableStateOf("") }
-    var error by remember { mutableStateOf<String?>(null) }
-    val proof = rememberProofInput(state)
-    AlertDialog(
-        onDismissRequest = { if (!state.busy) onDismiss() },
-        title = { Text(stringResource(Res.string.a_add_key)) },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Hint(stringResource(Res.string.set_add_key_text))
-                ProofFields(state, proof) { error = null }
-                // The new key (after the one of now, if that is how it is confirmed).
-                Hint(stringResource(Res.string.set_add_key_new))
-                OutlinedTextField(label, { label = it }, label = { Text(stringResource(Res.string.l_key_label)) }, singleLine = true)
-                KeyPinField(state, pin) { pin = it; error = null }
-                BusyBanner(state)
-                ErrorText(error)
-            }
-        },
-        confirmButton = {
-            val added = stringResource(Res.string.msg_key_added)
-            TextButton(onClick = {
-                state.run(onError = { error = it }, block = {
-                    state.backend.addSecurityKey(proof.proof(), pin, label.ifBlank { getString(Res.string.slot_backup_key) }, state.onTouchNeeded)
-                }) {
-                    proof.clear()
-                    state.changed()
-                    state.message(added)
-                    onDismiss()
-                }
-            }, enabled = !state.busy && keyPinOk(state, pin) && proof.ok(state)) { Text(stringResource(Res.string.a_register_key)) }
-        },
-        dismissButton = { TextButton(onClick = onDismiss, enabled = !state.busy) { Text(stringResource(Res.string.a_cancel)) } },
+        divider = !first, flush = true,
     )
 }
 

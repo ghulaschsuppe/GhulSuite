@@ -184,15 +184,11 @@ fun NewSuiteWizard(state: AppState, onCancel: () -> Unit) {
     fun addBackup() {
         state.run(onError = { error = it; backupTried = true }, block = {
             val proof = de.danerd.ghulsuite.model.FactorProofUi(password, if (backupTried) pin else null, null)
-            if (backupKey) {
-                backend.addSecurityKey(proof, backupPin, backupLabel.ifBlank { state.str(Res.string.slot_backup_key) }, state.onTouchNeeded)
-            } else {
-                // Switched to a key file after the second key did not work.
-                backend.addKeyfile(proof, keyfile!!, state.str(Res.string.keyfile_default_label), state.onTouchNeeded)
-            }
+            // A key file after the second key did not work (the second key goes through the guide).
+            backend.addKeyfile(proof, keyfile!!, state.str(Res.string.keyfile_default_label), state.onTouchNeeded)
         }) {
             backupDone = true
-            twoKeys = backupKey && keyfile == null
+            twoKeys = false
             quickProof = keyfile?.let { de.danerd.ghulsuite.model.FactorProofUi(password, null, it) }
                 ?: de.danerd.ghulsuite.model.FactorProofUi(password, pin, null)
             pin = ""; backupPin = ""; keyfile = null
@@ -200,11 +196,54 @@ fun NewSuiteWizard(state: AppState, onCancel: () -> Unit) {
         }
     }
 
+    /**
+     * A second key as the backup, guided in a dialog, one step at a time: 1 the first key is
+     * touched (the suite is made), 2 the first key out and the second in, 3 the second key is
+     * touched, 4 done; 5 after a failed try the first key is touched again first. 0: no dialog.
+     */
+    var guide by remember { mutableStateOf(0) }
+    var guideError by remember { mutableStateOf<String?>(null) }
+    val sameKeyText = stringResource(Res.string.wz_guide_same)
+    fun addSecondKey() {
+        guideError = null
+        state.run(onError = { guideError = it; backupTried = true }, block = {
+            // Right after making the suite (or confirming the first key again, step 5) the
+            // password alone confirms it: the first key is not touched a second time.
+            val proof = de.danerd.ghulsuite.model.FactorProofUi(password, null, null)
+            try {
+                backend.addSecurityKey(proof, backupPin, backupLabel.ifBlank { state.str(Res.string.slot_backup_key) }, state.onTouchNeeded)
+                true
+            } catch (e: de.danerd.ghulsuite.model.VaultException) {
+                if (e.kind == de.danerd.ghulsuite.model.VaultErrorKind.ALREADY_EXISTS) false else throw e
+            }
+        }) { ok ->
+            if (!ok) {
+                // The same key again: said at once; the first key confirms again before the next try.
+                guideError = sameKeyText
+                backupTried = true
+                return@run
+            }
+            backupDone = true
+            twoKeys = true
+            quickProof = de.danerd.ghulsuite.model.FactorProofUi(password, pin, null)
+            backupPin = ""; keyfile = null
+            guide = 4
+        }
+    }
+    fun confirmFirstAgain() {
+        guideError = null
+        guide = 5
+        state.run(onError = { guideError = it }, block = {
+            backend.confirmProtection(de.danerd.ghulsuite.model.FactorProofUi(password, pin, null), state.onTouchNeeded)
+        }) { guide = 2 }
+    }
+
     fun create() {
         // The choices on the screen say what to do with it (no second message).
         if (backend.exists()) { existing = true; return }
         val choice = kdf ?: KdfChoice(64 * 1024, 3, 0)
-        state.run(onError = { error = it }, block = {
+        if (useKey && backupKey) { guideError = null; guide = 1 }
+        state.run(onError = { error = it; guide = 0 }, block = {
             backend.create(
                 SetupUi(
                     password = password,
@@ -226,7 +265,7 @@ fun NewSuiteWizard(state: AppState, onCancel: () -> Unit) {
             repeat = ""
             // The password stays until quick unlock is set (step 6); a second key as backup follows.
             if (useKey && backupKey) {
-                addBackup()
+                guide = 2
             } else {
                 quickProof = keyfile?.let { de.danerd.ghulsuite.model.FactorProofUi(password, null, it) }
                     ?: de.danerd.ghulsuite.model.FactorProofUi(password, pin, null)
@@ -282,6 +321,7 @@ fun NewSuiteWizard(state: AppState, onCancel: () -> Unit) {
             3 -> when {
                 !(created && useKey && !backupDone) -> create()
                 !backupKey && (keyfile == null || !keyfileSaved) -> error = notSaved
+                backupKey -> confirmFirstAgain()
                 else -> addBackup()
             }
             4 -> if (AREAS.none { areaOn[it.kind] == true }) error = oneArea else applyAreas()
@@ -422,8 +462,15 @@ fun NewSuiteWizard(state: AppState, onCancel: () -> Unit) {
         }
 
         2 -> {
-            ListCard {
-                PickRow(useKey, Icons.Filled.Usb, 0, stringResource(Res.string.setup_use_key), stringResource(Res.string.wz_key_sub), onClick = { useKey = true }) {
+            // Both choices first, without scrolling; what the chosen one needs below them.
+            ListCard(Modifier.testTag("wz-factor-choice")) {
+                PickRow(useKey, Icons.Filled.Usb, 0, stringResource(Res.string.setup_use_key), stringResource(Res.string.wz_key_sub), onClick = { useKey = true; error = null })
+                if (filePickersAvailable) {
+                    PickRow(!useKey, Icons.Filled.Description, 9, stringResource(Res.string.setup_use_keyfile), stringResource(Res.string.wz_keyfile_sub), divider = true, onClick = { useKey = false; error = null })
+                }
+            }
+            if (useKey) {
+                SectionCard {
                     OutlinedTextField(keyLabel, { keyLabel = it }, Modifier.fillMaxWidth(), label = { Text(stringResource(Res.string.l_key_label)) }, singleLine = true)
                     if (!backend.keyPinInApp) {
                         KeyPinField(state, pin) { pin = it; error = null }
@@ -466,16 +513,17 @@ fun NewSuiteWizard(state: AppState, onCancel: () -> Unit) {
                         if (keyfileSaved) Text(stringResource(Res.string.keyfile_ready), color = okColor())
                     }
                 }
-                if (filePickersAvailable) {
-                    PickRow(!useKey, Icons.Filled.Description, 9, stringResource(Res.string.setup_use_keyfile), stringResource(Res.string.setup_use_keyfile_text), divider = true, onClick = { useKey = false }) {
-                        FilledTonalButton(onClick = {
-                            val data = keyfile ?: backend.generateKeyfile().also { keyfile = it }
-                            saveKeyfile(KEYFILE_NAME, data)
-                        }, modifier = Modifier.fillMaxWidth()) { Text(stringResource(Res.string.keyfile_create_save)) }
-                        OutlinedButton(onClick = openKeyfile, modifier = Modifier.fillMaxWidth()) { Text(stringResource(Res.string.keyfile_use_existing)) }
-                        if (keyfileSaved) Text(stringResource(Res.string.keyfile_ready), color = okColor())
-                        HintText(stringResource(Res.string.wz_keyfile_hint))
-                    }
+            } else if (filePickersAvailable) {
+                SectionCard {
+                    FilledTonalButton(onClick = {
+                        val data = keyfile ?: backend.generateKeyfile().also { keyfile = it }
+                        saveKeyfile(KEYFILE_NAME, data)
+                    }, modifier = Modifier.fillMaxWidth()) { Text(stringResource(Res.string.keyfile_create_save)) }
+                    OutlinedButton(onClick = openKeyfile, modifier = Modifier.fillMaxWidth()) { Text(stringResource(Res.string.keyfile_use_existing)) }
+                    if (keyfileSaved) Text(stringResource(Res.string.keyfile_ready), color = okColor())
+                    // A key file needs no backup step: its backup is a copy kept elsewhere.
+                    HintText(stringResource(Res.string.wz_keyfile_hint))
+                    HintText(stringResource(Res.string.setup_use_keyfile_text))
                 }
             }
             HintText(stringResource(Res.string.wz_factor_hint))
@@ -666,6 +714,12 @@ fun NewSuiteWizard(state: AppState, onCancel: () -> Unit) {
 
     ErrorText(error)
     if (step < 7) {
+        if (guide != 0) SecondKeyGuide(state, guide, guideError, onNext = {
+            when (guide) {
+                2 -> { guide = 3; addSecondKey() }
+                4 -> { guide = 0; pin = ""; step = 4 }
+            }
+        }, onRetry = { confirmFirstAgain() }, onClose = { guide = 0; guideError = null })
         ButtonRow {
             if (step > 1 && !(created && step <= 4)) OutlinedButton(onClick = { back() }, modifier = Modifier.weight(1f)) { Text(stringResource(Res.string.a_back)) }
             Button(
@@ -724,5 +778,58 @@ fun PickRow(
     }
     if (selected && enabled && more != null) {
         Column(Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, bottom = 12.dp), verticalArrangement = Arrangement.spacedBy(10.dp), content = more)
+    }
+}
+
+/**
+ * The second key as the backup, one step per screen: what to do appears when it is due, a step
+ * done gets a check mark. The same key twice is refused at once ([error]).
+ */
+@Composable
+private fun SecondKeyGuide(state: AppState, guide: Int, error: String?, onNext: () -> Unit, onRetry: () -> Unit, onClose: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = {},
+        title = { Text(stringResource(Res.string.wz_backup_second_key)) },
+        text = {
+            Column(Modifier.testTag("wz-guide-$guide"), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                when (guide) {
+                    1, 5 -> Text(stringResource(Res.string.wz_guide_first))
+                    2 -> {
+                        GuideDone(stringResource(Res.string.wz_guide_first_done))
+                        Text(stringResource(Res.string.wz_guide_swap))
+                    }
+                    3 -> {
+                        GuideDone(stringResource(Res.string.wz_guide_first_done))
+                        Text(stringResource(Res.string.wz_guide_second))
+                    }
+                    4 -> {
+                        GuideDone(stringResource(Res.string.wz_guide_first_done))
+                        GuideDone(stringResource(Res.string.wz_guide_second_done))
+                    }
+                }
+                BusyBanner(state)
+                ErrorText(error)
+            }
+        },
+        confirmButton = {
+            when {
+                state.busy -> {}
+                error != null -> TextButton(onClick = onRetry, modifier = Modifier.testTag("wz-guide-retry")) { Text(stringResource(Res.string.a_retry)) }
+                guide == 2 || guide == 4 -> TextButton(onClick = onNext, modifier = Modifier.testTag("wz-guide-next")) { Text(stringResource(Res.string.a_next)) }
+                else -> {}
+            }
+        },
+        dismissButton = {
+            // A try that failed: the step shows the other way (a key file instead).
+            if (error != null && !state.busy) TextButton(onClick = onClose) { Text(stringResource(Res.string.a_cancel)) }
+        },
+    )
+}
+
+@Composable
+private fun GuideDone(text: String) {
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Icon(Icons.Filled.Check, null, tint = okColor())
+        Text(text, color = okColor())
     }
 }

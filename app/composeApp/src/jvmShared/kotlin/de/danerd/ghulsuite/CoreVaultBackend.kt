@@ -4,6 +4,7 @@ package de.danerd.ghulsuite
 import de.danerd.ghulsuite.core.EntryData
 import de.danerd.ghulsuite.core.FidoListener
 import de.danerd.ghulsuite.core.FidoStatus
+import de.danerd.ghulsuite.core.NewFactor
 import de.danerd.ghulsuite.core.GhulException
 import de.danerd.ghulsuite.core.GhulSuite
 import de.danerd.ghulsuite.core.HidTransport
@@ -1348,6 +1349,58 @@ abstract class CoreVaultBackend(private val localDir: String) : VaultBackend {
     override suspend fun removeSlot(proof: FactorProofUi, id: String, onTouchNeeded: () -> Unit) {
         maybeWithKey(proof.pin) { t -> suite.removeSlot(proof.core(), t, t?.let { Touch(onTouchNeeded) }, id.hexToBytes()) }
         markOldFileToWipe()
+        onProtectionChanged()
+    }
+
+    /**
+     * With a key of now: the core's confirmation (the key touched now, the change then takes the
+     * password alone). Review N-1: with a key file, or the password alone after the recovery
+     * code, nothing is left behind: only the password is checked here, the key file with the
+     * change itself (it confirms every change on its own).
+     */
+    override suspend fun confirmProtection(proof: FactorProofUi, onTouchNeeded: () -> Unit) {
+        if (proof.pin != null) {
+            withKey { t -> suite.confirmFactors(proof.core(), t, Touch(onTouchNeeded)) }
+        } else if (!io { suite.verifyPassword(proof.password) }) {
+            throw de.danerd.ghulsuite.model.VaultException(de.danerd.ghulsuite.model.VaultErrorKind.WRONG_PASSWORD)
+        }
+    }
+
+    /**
+     * Each new factor is one change of the protection in the core (`changeFactors`: added and,
+     * with the last one, the old ones removed, written at once; an abort leaves the old or the
+     * new state). The first change takes the confirmation of [confirmProtection] (password
+     * alone: the key of now is not touched a second time). A later one (the second key of a
+     * change to keys) is confirmed with a factor that stays: the key file of now, else the key
+     * just added (in a connection of its own, before the next key is plugged in).
+     */
+    override suspend fun replaceFactors(proof: FactorProofUi, add: List<de.danerd.ghulsuite.model.NewFactorUi>, remove: List<String>, onTouchNeeded: () -> Unit) {
+        val ids = remove.map { it.hexToBytes() }
+        var newKey: FactorProofUi? = null
+        suspend fun confirmed(p: FactorProofUi): FactorProofUi {
+            if (p.pin == null) return p
+            withKey { t -> suite.confirmFactors(p.core(), t, Touch(onTouchNeeded)) }
+            return FactorProofUi(p.password, null, null)
+        }
+        val steps: List<de.danerd.ghulsuite.model.NewFactorUi?> = add.ifEmpty { listOf(null) }
+        steps.forEachIndexed { i, f ->
+            val p = if (i == 0) {
+                if (proof.pin != null) FactorProofUi(proof.password, null, null) else proof
+            } else {
+                confirmed(if (proof.keyfile != null) proof else newKey ?: proof)
+            }
+            val gone = if (i == steps.lastIndex) ids else emptyList()
+            when (f) {
+                is de.danerd.ghulsuite.model.NewFactorUi.Key -> {
+                    withKey { t -> suite.changeFactors(p.core(), null, NewFactor.SecurityKey(f.pin), t, Touch(onTouchNeeded), f.label, gone) }
+                    newKey = FactorProofUi(proof.password, f.pin, null)
+                }
+                is de.danerd.ghulsuite.model.NewFactorUi.Keyfile ->
+                    io { suite.changeFactors(p.core(), null, NewFactor.Keyfile(f.data), null, null, f.label, gone) }
+                null -> io { suite.changeFactors(p.core(), null, null, null, null, "", gone) }
+            }
+        }
+        if (ids.isNotEmpty()) markOldFileToWipe()
         onProtectionChanged()
     }
 

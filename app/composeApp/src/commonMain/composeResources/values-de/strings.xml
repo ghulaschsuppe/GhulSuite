@@ -2,8 +2,6 @@
 <!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
 <resources>
     <string name="a_add">Hinzufügen</string>
-    <string name="a_add_key">Key hinzufügen</string>
-    <string name="a_add_keyfile">Schlüsseldatei hinzufügen</string>
     <string name="a_allow">Erlauben</string>
     <string name="a_apply">Übernehmen</string>
     <string name="a_back">Zurück</string>
@@ -221,8 +219,6 @@
     <string name="keyfile_needed">Wähle deine Schlüsseldatei (.ghlkey).</string>
     <string name="keyfile_not_saved">Speichere zuerst die Schlüsseldatei.</string>
     <string name="keyfile_ready">Schlüsseldatei bereit.</string>
-    <string name="keyfile_text">Speichere die Schlüsseldatei an einem Ort, den nur du hast, getrennt von der Suite-Datei: nicht auf diesem Handy, nicht auf dem Gerät oder Stick, auf dem die Suite-Datei liegt, und nicht im selben Ordner. Lege eine Kopie an. Wer Passwort und Schlüsseldatei hat, kommt hinein. Liegt sie neben der Suite-Datei oder auf demselben Gerät, schützt dich nur noch das Passwort.</string>
-    <string name="keyfile_title">Schlüsseldatei</string>
     <string name="keyfile_use_existing">Vorhandene Schlüsseldatei verwenden</string>
     <string name="l_app_pin">App-PIN</string>
     <string name="l_app_pin_repeat">App-PIN wiederholen</string>
@@ -230,7 +226,6 @@
     <string name="l_current_password">Aktuelles Master-Passwort</string>
     <string name="l_key_label">Name des Keys (z. B. „Key am Schlüsselbund“)</string>
     <string name="l_key_pin">PIN des Keys</string>
-    <string name="l_keyfile_label">Name (z. B. „Zweiter Stick“)</string>
     <string name="l_master_password">Master-Passwort</string>
     <string name="l_new_password">Neues Master-Passwort</string>
     <string name="l_new_pin">Neue Key-PIN (mindestens 4 Zeichen)</string>
@@ -248,8 +243,6 @@
     <string name="msg_copied">%1$s kopiert, wird gleich aus der Zwischenablage gelöscht</string>
     <string name="msg_exported">Tresordatei gespeichert.</string>
     <string name="msg_exported_plain">Unverschlüsselte Datei gespeichert. Denk daran, sie nach dem Umzug zu löschen.</string>
-    <string name="msg_key_added">Key hinzugefügt.</string>
-    <string name="msg_keyfile_added">Schlüsseldatei hinzugefügt.</string>
     <plurals name="msg_migration_done">
         <item quantity="one">%1$s aus Google Authenticator übernommen, %2$s war schon vorhanden.</item>
         <item quantity="other">%1$s aus Google Authenticator übernommen, %2$s waren schon vorhanden.</item>
@@ -278,10 +271,8 @@
     <string name="s_busy_percent">Arbeite … %1$s</string>
     <string name="s_touch_key">Jetzt den Key berühren</string>
     <string name="set_about">Über und Hilfe</string>
-    <string name="set_add_key_text">Stecke den Key ein. Du berührst ihn zweimal. Danach öffnet er die Suite genau wie deine anderen Keys und Schlüsseldateien. An diesen ändert sich nichts.</string>
     <string name="set_app_pin_text">Wähle eine App-PIN mit 8 bis 12 Ziffern, nicht die PIN deiner Displaysperre und kein Datum. Sie gilt nur auf diesem Gerät und nur für das Schnell-Entsperren. Nach 2 falschen Eingaben ist sie weg; dann öffnen nur Passwort und zweiter Faktor.</string>
     <string name="set_auto_lock">Im Hintergrund sperren</string>
-    <string name="set_backup_key_hint">Empfehlung: Lege einen Ersatz an (zweiter Key oder Schlüsseldatei). Geht dein einziger verloren, kommst du nur noch mit dem Wiederherstellungscode hinein.</string>
     <string name="set_change_pw_text">Gilt für die Suite und alle Tresore. Keys, Schlüsseldateien und der Wiederherstellungscode bleiben gültig.</string>
     <string name="set_clipboard">Zwischenablage leeren</string>
     <string name="set_code_shown_once">Dieser Code wird nur jetzt angezeigt. Schreibe ihn ab oder drucke ihn aus und bewahre ihn sicher auf. Der alte Code öffnet nichts mehr, was du ab jetzt speicherst; alte Kopien der Suite-Datei öffnet er weiter, darum diese löschen.</string>
@@ -291,7 +282,6 @@
     <string name="set_keys_hint">Womit sich deine Suite öffnen lässt: Passwort plus einer der Keys oder Schlüsseldateien. Der Wiederherstellungscode öffnet alles allein. Bewahre ihn sicher auf.</string>
     <string name="set_lock_screen_off">Sperren, wenn der Bildschirm ausgeht</string>
     <string name="set_new_code_text">Es wird ein neuer Wiederherstellungscode erstellt. Der bisherige öffnet danach nichts mehr, was du ab jetzt speicherst; alte Kopien der Suite-Datei öffnet er weiter.</string>
-    <string name="set_no_key_hint">Deine Suite ist mit einer Schlüsseldatei geschützt. Ein Key ist noch sicherer: Er lässt sich nicht kopieren.</string>
     <string name="set_panic_hint">Der Sperr-Knopf und die Benachrichtigung sperren normal. Schütteln und die Kachel „GhulSuite sperren“ in den Schnelleinstellungen sind eine Sofortsperre: Sie löschen zusätzlich Fingerabdruck- und App-PIN-Entsperren, danach öffnen nur Master-Passwort und zweiter Faktor. Termin-Erinnerungen laufen weiter, außer du lässt die Sofortsperre sie mitlöschen (beim nächsten Entsperren kommen sie zurück). Ein kurzes Vibrieren bestätigt das Sperren durch Schütteln.</string>
     <string name="set_panic_reminders">Sofortsperre löscht auch die Termin-Erinnerungen</string>
     <string name="set_password">Master-Passwort</string>
@@ -315,8 +305,40 @@
     <string name="set_shake">Durch Schütteln sperren</string>
     <string name="set_shake_sensitivity">Empfindlichkeit</string>
     <string name="set_show_subtitles">GhulPass: Benutzernamen in der Liste zeigen</string>
-    <string name="set_swap_hint">Jeder Key und jede Schlüsseldatei öffnet die Suite zusammen mit deinem Passwort. Hinzufügen oder Entfernen ändert nichts an den anderen.</string>
     <string name="set_lost_hint">Etwas verloren (Key, Schlüsseldatei oder Notfallblatt)? Entfernen bzw. ein neues Notfallblatt sperrt es für die aktuelle Suite aus. Eine alte Kopie der Suite-Datei öffnet sich mit dem Verlorenen aber weiter und zeigt den Stand von damals. Lösche deshalb alte Kopien und ändere die Passwörter wichtiger Konten, wenn jemand eine solche Kopie haben könnte. Beim nächsten Speichern überschreibt GhulSuite die alte Datei am selben Ort mit Nullen; auf Sticks und SSDs ist auch das nicht ganz sicher. Am sichersten speicherst du die Suite-Datei danach auf einem frisch formatierten Stick.</string>
+    <string name="fac_summary">Dein Schutz: Passwort + %1$s</string>
+    <string name="fac_summary_both">%1$s mit Backup (%2$s)</string>
+    <string name="fac_main">Hauptfaktor</string>
+    <string name="fac_backup">Backup</string>
+    <string name="fac_extra_keyfile">Weitere Schlüsseldatei</string>
+    <string name="a_replace">Austauschen</string>
+    <string name="fac_switch">Schutz wechseln</string>
+    <string name="fac_switch_to_keyfile">Von Key zu Schlüsseldatei. Danach öffnen deine Keys nichts mehr.</string>
+    <string name="fac_switch_to_key">Von Schlüsseldatei zu Key, mit Backup (zweiter Key oder neue Schlüsseldatei).</string>
+    <string name="fac_setup_backup">Backup einrichten</string>
+    <string name="fac_keyfile_copy">Eine Schlüsseldatei braucht kein Backup in der App. Ihr Backup ist eine Kopie an einem anderen Ort, nicht auf dem Stick der Suite-Datei.</string>
+    <string name="fac_key_backup_hint">Ein Key braucht immer ein Backup: einen zweiten Key oder eine Schlüsseldatei. Austauschen ersetzt einen Faktor: Der alte gilt danach nicht mehr.</string>
+    <string name="fac_step_of">Schritt %1$s von %2$s</string>
+    <string name="fac_confirm_text">Bestätige zuerst deinen Schutz: Master-Passwort und einer deiner Faktoren von jetzt.</string>
+    <string name="fac_choose_kind">Was soll das Backup sein?</string>
+    <string name="fac_new_key">Steck den neuen Key ein und berühre ihn, wenn GhulSuite darum bittet. Hast du eben mit einem Key bestätigt, zieh ihn vorher ab.</string>
+    <string name="fac_new_backup_key">Zieh den neuen Key ab und steck den zweiten ein. Berühre ihn, wenn GhulSuite darum bittet.</string>
+    <string name="fac_new_keyfile">Erstelle die neue Schlüsseldatei und speichere sie an einem Ort, den nur du hast, getrennt von der Suite-Datei.</string>
+    <string name="fac_key_ready">Neuer Key eingerichtet.</string>
+    <string name="fac_same_key">Dieser Key ist schon eingetragen. Steck einen anderen Key ein und versuche es noch einmal.</string>
+    <string name="fac_removed_one">Der alte Faktor ist entfernt. Er öffnet nichts mehr, was du ab jetzt speicherst.</string>
+    <string name="fac_removed_many">Die alten Faktoren sind entfernt. Sie öffnen nichts mehr, was du ab jetzt speicherst.</string>
+    <string name="fac_done">Fertig. Speichere die Suite-Datei jetzt, damit sie den neuen Schutz hat.</string>
+    <string name="fac_old_copies">Ältere Kopien der Suite-Datei (Sicherungen, ein alter Stick, Versionen in der Cloud) öffnen sich weiter mit dem alten Faktor. Lösche sie am besten.</string>
+    <string name="fac_reconfirm">Bestätige noch einmal mit deinem Key: Steck deinen bisherigen Key ein und berühre ihn, wenn GhulSuite darum bittet. Danach geht es mit dem neuen weiter.</string>
+    <string name="fac_no_backup_title">Dein Key hat kein Backup</string>
+    <string name="a_save_now">Jetzt speichern</string>
+    <string name="wz_guide_first">Steck deinen ersten Key ein und berühre ihn, wenn GhulSuite darum bittet.</string>
+    <string name="wz_guide_first_done">Erster Key eingerichtet.</string>
+    <string name="wz_guide_swap">Zieh den ersten Key ab und steck den zweiten ein.</string>
+    <string name="wz_guide_second">Berühre den zweiten Key, wenn GhulSuite darum bittet.</string>
+    <string name="wz_guide_second_done">Zweiter Key eingerichtet.</string>
+    <string name="wz_guide_same">Das ist derselbe Key wie der erste. Zieh ihn ab, steck den zweiten Key ein und versuche es noch einmal.</string>
     <string name="set_theme">Design</string>
     <string name="set_totp_hide">GhulAuth: Codes erst nach Antippen zeigen</string>
     <string name="set_totp_next">GhulAuth: nächsten Code kurz vor Ablauf zeigen</string>
@@ -348,6 +370,7 @@
     <string name="setup_use_key">Key (Sicherheitsschlüssel, empfohlen)</string>
     <string name="setup_use_keyfile">Schlüsseldatei</string>
     <string name="setup_use_keyfile_text">Eine kleine Datei, die du getrennt von der Suite-Datei aufbewahrst, z. B. auf einem eigenen Stick, nicht auf dem Handy mit der App. Gut für den Anfang; später kannst du sie gegen einen Key tauschen.</string>
+    <string name="wz_keyfile_sub">Eine kleine Datei, die du sicher aufbewahrst</string>
     <string name="shake_high">hoch</string>
     <string name="shake_low">gering</string>
     <string name="shake_medium">mittel</string>
@@ -852,8 +875,8 @@
     <string name="wz_pw_hint">Das Passwort verlässt nie dein Gerät. Ohne Passwort und zweiten Faktor hilft nur noch der Wiederherstellungscode (Schritt 7).</string>
     <string name="wz_key_sub">Empfohlen · YubiKey, Nitrokey … per USB</string>
     <string name="wz_key_touch">Key einstecken und berühren, wenn GhulSuite darum bittet (beim Anlegen in Schritt 3).</string>
-    <string name="wz_keyfile_hint">Bewahre sie getrennt von der Suite-Datei auf: nicht auf demselben Stick und nicht im selben Ordner.</string>
-    <string name="wz_factor_hint">Zum Entsperren brauchst du immer Passwort und diesen zweiten Faktor. Weitere Keys oder eine Ersatz-Schlüsseldatei fügst du später unter Optionen hinzu.</string>
+    <string name="wz_keyfile_hint">Kein Backup nötig: Bewahre eine Kopie der Datei an einem anderen Ort auf, nicht auf dem Stick der Suite-Datei.</string>
+    <string name="wz_factor_hint">Zum Entsperren brauchst du immer Passwort und diesen zweiten Faktor. Austauschen kannst du ihn später unter Optionen.</string>
     <string name="wz_create_touch">Als Nächstes legt GhulSuite die Suite an. Berühre deinen Key zweimal, wenn GhulSuite darum bittet.</string>
     <string name="wz_areas_hint">Jeder gewählte Bereich bekommt seine eigene Datei mit seinen Einstellungen. Nicht gewählte Bereiche legen keine Datei an und sind ausgeblendet. Einschalten jederzeit unter Optionen → Bereiche.</string>
     <string name="wz_one_area">Mindestens einen Bereich wählen.</string>
@@ -989,6 +1012,8 @@
     <string name="core_steam">Steam-Codes haben 5 Zeichen.</string>
     <string name="core_issuer">Bitte Dienst oder Konto angeben.</string>
     <string name="core_code_replace">Den Wiederherstellungscode kann man nur ersetzen, nicht entfernen.</string>
+    <string name="core_nothing_to_change">Es gibt nichts zu ändern.</string>
+    <string name="core_new_key_connection">Der neue Key ist nicht verbunden. Steck ihn ein und versuche es noch einmal.</string>
     <string name="core_factor_req">Ein Key oder eine Schlüsseldatei ist nötig.</string>
     <string name="core_key_pin_pair">Key und PIN gehören zusammen.</string>
     <string name="core_pin_set">Der Key hat schon eine PIN.</string>
@@ -1484,11 +1509,10 @@
     <string name="err_backup_factor">Ein Security Key braucht ein Backup: einen zweiten Key oder eine Schlüsseldatei. Füge zuerst ein Backup hinzu.</string>
     <string name="proof_hint">Zur Bestätigung: Master-Passwort und dein Key oder deine Schlüsseldatei. Wer die entsperrte App kurz in der Hand hat, kann so nichts an deinem Schutz ändern.</string>
     <string name="proof_recovered_hint">Mit dem Wiederherstellungscode geöffnet: Bis zum Sperren genügt dein neues Master-Passwort. Ersetze jetzt verlorene Faktoren und erstelle einen neuen Wiederherstellungscode.</string>
-    <string name="set_add_key_new">Dann der neue Key: Name und, wenn er es braucht, seine PIN. Bestätigst du mit deinem bisherigen Key, berühre erst ihn; danach steckst du den neuen ein. Ein Key, der schon eingetragen ist, lehnt ab.</string>
     <string name="wz_backup_title">Backup für den Key (Pflicht)</string>
     <string name="wz_backup_text">Geht dein Key verloren, kommst du mit dem Backup weiter hinein. Es funktioniert genau wie der Key: eine Schlüsseldatei (getrennt von der Suite-Datei aufbewahrt, z. B. auf einem eigenen Stick) oder ein zweiter Security Key.</string>
     <string name="wz_backup_second_key">Zweiter Key</string>
-    <string name="wz_backup_second_key_hint">Erst berührst du deinen ersten Key zweimal (Anlegen), dann steckst du den zweiten ein und berührst ihn ebenfalls zweimal. Ist es derselbe Key, lehnt er ab.</string>
+    <string name="wz_backup_second_key_hint">Den zweiten Key richtest du gleich nach dem Anlegen ein, Schritt für Schritt.</string>
     <string name="set_key_no_backup">Dein Key hat kein Backup. Geht er verloren, kommst du nur noch mit dem Wiederherstellungscode hinein. Füge einen zweiten Key oder eine Schlüsseldatei hinzu.</string>
     <string name="wz_backup_failed">Die Suite ist angelegt, aber das Backup fehlt noch. Versuche den zweiten Key noch einmal (erst den ersten berühren) oder nimm stattdessen eine Schlüsseldatei.</string>
     <string name="save_conflict_protection">Die Suite-Datei an diesem Ort hat einen neueren Schutz: Auf einem anderen Gerät wurde inzwischen das Passwort geändert, ein Key entfernt oder ein neuer Wiederherstellungscode erstellt. Überschreiben würde das rückgängig machen (ein alter Code würde wieder öffnen), darum geht es hier nicht. Öffnest du die Datei (mit deinem aktuellen bzw. dem neuen Passwort und Key), gehen die Änderungen dieses Geräts verloren, die nicht in ihr sind.</string>

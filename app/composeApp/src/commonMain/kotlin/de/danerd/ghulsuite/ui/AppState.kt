@@ -174,6 +174,12 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
     /** After a change of the protection: asks to save the suite file (older copies are outdated). */
     var saveAfterProtection by mutableStateOf(false)
 
+    /** Review N-2: the key of the suite has no backup (e.g. the app stopped in the wizard before the second key): asked once per unlock. */
+    var keyWithoutBackup by mutableStateOf(false)
+
+    /** A change of the second factors to open on Options, Keys and key files (from the question above). */
+    var pendingFactorTask by mutableStateOf<FactorTask?>(null)
+
     /** The area has its file in this suite (it may still be hidden on this device). */
     fun hasArea(kind: VaultKindUi): Boolean = !areasKnown || vaults.any { it.kind == kind }
 
@@ -698,6 +704,10 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
                     // place chosen but not saved to gives its grant back.
                     saveConflictSeen = false
                     if (saveJob == null) releasePendingPlace()
+                    // Review M-a (factors): the question about a key without a backup and the flow it
+                    // opens belong to that unlock only (not to a vault opened alone or a recovery).
+                    keyWithoutBackup = false
+                    pendingFactorTask = null
                     dropPending()
                     // A scan in progress: its photos and pages are overwritten now, not saved.
                     scanSession?.wipe()

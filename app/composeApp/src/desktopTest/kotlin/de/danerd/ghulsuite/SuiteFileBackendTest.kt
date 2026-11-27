@@ -477,6 +477,56 @@ class SuiteFileBackendTest {
     }
 
     /**
+     * Options, Keys and key files, "Replace" on the key file: confirmed with the key file of now,
+     * a new one made, the old one removed in the same change. The old key file opens nothing any
+     * more, the new one does.
+     */
+    @Test
+    fun aReplacedKeyFileNoLongerOpensTheSuite() = runBlocking<Unit> {
+        val dir = Files.createTempDirectory("ghul-replace").toFile()
+        try {
+            val kf = generateKeyfile()
+            val a = device(File(dir, "a"), kf)
+            val old = a.slots().single { it.type == de.danerd.ghulsuite.model.SlotType.KEYFILE }
+            val proof = de.danerd.ghulsuite.model.FactorProofUi(password, null, kf)
+            val fresh = generateKeyfile()
+            a.confirmProtection(proof) {}
+            a.replaceFactors(proof, listOf(de.danerd.ghulsuite.model.NewFactorUi.Keyfile(fresh, "Neu")), listOf(old.id)) {}
+            val now = a.slots().filter { it.type == de.danerd.ghulsuite.model.SlotType.KEYFILE }
+            assertEquals(listOf("Neu"), now.map { it.label })
+            a.lock()
+            assertFailsWith<VaultException> { a.unlock(password, null, kf) {} }
+            assertFalse(a.unlocked.value)
+            a.unlock(password, null, fresh) {}
+            assertTrue(a.unlocked.value)
+        } finally {
+            dir.deleteRecursively()
+        }
+    }
+
+    /**
+     * Review N-1: confirmed with a key file, nothing is left behind (no confirmation the next
+     * change could use with the password alone); a wrong password is refused at once.
+     */
+    @Test
+    fun aKeyFileConfirmationLeavesNothingBehind() = runBlocking<Unit> {
+        val dir = Files.createTempDirectory("ghul-confirm").toFile()
+        try {
+            val kf = generateKeyfile()
+            val a = device(File(dir, "a"), kf)
+            assertFailsWith<VaultException> { a.confirmProtection(de.danerd.ghulsuite.model.FactorProofUi("falsch-falsch-1", null, kf)) {} }
+            a.confirmProtection(de.danerd.ghulsuite.model.FactorProofUi(password, null, kf)) {}
+            val passwordAlone = de.danerd.ghulsuite.model.FactorProofUi(password, null, null)
+            assertFailsWith<VaultException> {
+                a.replaceFactors(passwordAlone, listOf(de.danerd.ghulsuite.model.NewFactorUi.Keyfile(generateKeyfile(), "Neu")), emptyList()) {}
+            }
+            assertEquals(1, a.slots().count { it.type == de.danerd.ghulsuite.model.SlotType.KEYFILE })
+        } finally {
+            dir.deleteRecursively()
+        }
+    }
+
+    /**
      * Device test after PR #55: a new suite, set up as the wizard does (no area at first, then all
      * four areas, then the suite file), was "unsaved: GhulCal" without a touch: the first look at
      * GhulCal made the usual calendars and the area settings were filled in from this device, both

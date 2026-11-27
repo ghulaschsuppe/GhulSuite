@@ -1295,6 +1295,7 @@ mod collections;
 mod crazy_user;
 mod docs;
 mod everyday;
+mod factors;
 mod format_freeze;
 mod hardening;
 mod properties;

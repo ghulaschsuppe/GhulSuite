@@ -1256,6 +1256,199 @@ class InteractionTest {
         waitFor("Create")
     }
 
+    /** After "Register key" with a second key as the backup: the guide, step by step, to its end. */
+    private fun DesktopComposeUiTest.passSecondKeyGuide() {
+        waitUntil(timeoutMillis = 10_000) { tagged("wz-guide-2") }
+        onNodeWithTag("wz-guide-next", useUnmergedTree = true).performClick()
+        waitUntil(timeoutMillis = 10_000) { tagged("wz-guide-4") }
+        onNodeWithTag("wz-guide-next", useUnmergedTree = true).performClick()
+        waitUntil(timeoutMillis = 10_000) { !tagged("wz-guide-4") }
+    }
+
+    /**
+     * The backup of a key in the wizard: the second key step by step in a dialog, each
+     * instruction when it is due; the same key again is refused at once and tried again after
+     * the first key confirmed once more.
+     */
+    @Test
+    fun theSecondKeyIsGuidedStepByStep() = withPickers {
+        app(setup = { showStart = true }, prepare = { unlocked.value = false; existsNow = false; masterPassword = "Kater-Ufer-Mondlicht-73" }) { _, fake ->
+            toCreateStep()
+            assertFalse(shown("Unplug the first key and plug in the second one."), "not before it is due")
+            fake.sameKeyOnce = true
+            onNode(hasText("Register key") and hasClickAction()).performScrollTo().performClick()
+            waitUntil(timeoutMillis = 10_000) { tagged("wz-guide-2") }
+            assertTrue("create" in fake.calls)
+            assertTrue(shown("First key set up."))
+            assertTrue(shown("Unplug the first key and plug in the second one."))
+            assertFalse(shown("Touch the second key when GhulSuite asks."))
+            shot("setup-guide-swap")
+            onNodeWithTag("wz-guide-next", useUnmergedTree = true).performClick()
+            // The same key: refused at once, with what to do.
+            waitFor("That is the same key as the first one. Unplug it, plug in the second key and try again.")
+            assertTrue("addSecurityKey" !in fake.calls)
+            onNodeWithTag("wz-guide-retry", useUnmergedTree = true).performClick()
+            // The first key confirms again, then the swap once more.
+            waitUntil(timeoutMillis = 10_000) { tagged("wz-guide-2") }
+            assertTrue("confirmProtection" in fake.calls)
+            onNodeWithTag("wz-guide-next", useUnmergedTree = true).performClick()
+            waitUntil(timeoutMillis = 10_000) { tagged("wz-guide-4") }
+            assertTrue(shown("Second key set up."))
+            assertTrue(fake.calls.indexOf("create") < fake.calls.indexOf("addSecurityKey"), fake.calls.toString())
+            onNodeWithTag("wz-guide-next", useUnmergedTree = true).performClick()
+            waitFor("Areas")
+        }
+    }
+
+    /** Options, Keys and key files, up to the new key of "Replace" on the main key (confirmed with the key of now). */
+    private fun DesktopComposeUiTest.toNewKeyOfReplace(fake: ScreenshotTest.Fake) {
+        waitUntil(timeoutMillis = 10_000) { tagged("factor-summary") }
+        onNodeWithTag("factor-replace-k", useUnmergedTree = true).performScrollTo().performClick()
+        waitUntil(timeoutMillis = 10_000) { tagged("factor-step-confirm") }
+        onAllNodes(hasSetTextAction() and hasAnyAncestor(isDialog()))[0].performTextInput(fake.masterPassword)
+        onAllNodes(hasSetTextAction() and hasAnyAncestor(isDialog()))[1].performTextInput("1234")
+        onNodeWithTag("factor-next", useUnmergedTree = true).performClick()
+        waitUntil(timeoutMillis = 10_000) { tagged("factor-step-new_factor") }
+    }
+
+    private fun DesktopComposeUiTest.registerNewKey() {
+        onAllNodes(hasSetTextAction() and hasAnyAncestor(isDialog()))[0].performTextInput("5678")
+        onNodeWithTag("factor-next", useUnmergedTree = true).performClick()
+    }
+
+    /**
+     * Review M-1: the same key again uses up the confirmation of the key of now: the flow asks
+     * to confirm once more with it, then the next try goes through (no dead end).
+     */
+    @Test
+    fun afterTheSameKeyTheKeyOfNowConfirmsAgain() = withPickers {
+        app(setup = { push(Screen.SettingsPage(SetPage.FACTORS)) }, prepare = { settings.factorKey = true }) { _, fake ->
+            fake.replaceFails += de.danerd.ghulsuite.model.VaultException(de.danerd.ghulsuite.model.VaultErrorKind.ALREADY_EXISTS)
+            toNewKeyOfReplace(fake)
+            registerNewKey()
+            waitFor("This key is registered already. Plug in a different key and try again.")
+            assertTrue(tagged(de.danerd.ghulsuite.ui.FACTOR_RECONFIRM_TAG))
+            assertTrue(part("Confirm once more with your key"))
+            shot("factor-reconfirm")
+            onNodeWithTag(de.danerd.ghulsuite.ui.FACTOR_RECONFIRM_TAG, useUnmergedTree = true).performClick()
+            waitUntil(timeoutMillis = 10_000) { part("Plug in the new key") }
+            assertEquals(2, fake.calls.count { it == "confirmProtection" })
+            registerNewKey()
+            waitFor("New key set up.")
+            assertEquals(
+                listOf("confirmProtection", "replaceFactors:key:k", "confirmProtection", "replaceFactors:key:k"),
+                fake.calls.filter { it.startsWith("confirm") || it.startsWith("replace") },
+            )
+        }
+    }
+
+    /**
+     * Review M-1: a confirmation that is too old is not tried (the key of now confirms first);
+     * one the core no longer takes (expired meanwhile) leads there as well.
+     */
+    @Test
+    fun anExpiredConfirmationAsksToConfirmAgain() = withPickers {
+        app(setup = { push(Screen.SettingsPage(SetPage.FACTORS)) }, prepare = { settings.factorKey = true }) { _, fake ->
+            try {
+                toNewKeyOfReplace(fake)
+                de.danerd.ghulsuite.ui.FactorTiming.confirmMaxMillis = 0
+                registerNewKey()
+                waitUntil(timeoutMillis = 10_000) { tagged(de.danerd.ghulsuite.ui.FACTOR_RECONFIRM_TAG) }
+                assertTrue(fake.calls.none { it.startsWith("replaceFactors") }, "not tried with the old confirmation")
+                de.danerd.ghulsuite.ui.FactorTiming.confirmMaxMillis = 100_000
+                // Expired in the core: "a key or key file is required".
+                fake.replaceFails += de.danerd.ghulsuite.model.VaultException(de.danerd.ghulsuite.model.VaultErrorKind.INVALID_INPUT, "a security key or key file is required")
+                onNodeWithTag(de.danerd.ghulsuite.ui.FACTOR_RECONFIRM_TAG, useUnmergedTree = true).performClick()
+                waitUntil(timeoutMillis = 10_000) { part("Plug in the new key") }
+                registerNewKey()
+                waitUntil(timeoutMillis = 10_000) { tagged(de.danerd.ghulsuite.ui.FACTOR_RECONFIRM_TAG) }
+                onNodeWithTag(de.danerd.ghulsuite.ui.FACTOR_RECONFIRM_TAG, useUnmergedTree = true).performClick()
+                waitUntil(timeoutMillis = 10_000) { part("Plug in the new key") }
+                registerNewKey()
+                waitFor("New key set up.")
+                assertEquals(3, fake.calls.count { it == "confirmProtection" })
+                assertEquals(2, fake.calls.count { it.startsWith("replaceFactors") })
+            } finally {
+                de.danerd.ghulsuite.ui.FactorTiming.confirmMaxMillis = 100_000
+            }
+        }
+    }
+
+    /** Review N-2: a key without a backup is asked about after unlocking, straight to "Set up a backup". */
+    @Test
+    fun aKeyWithoutBackupIsAskedAboutAfterUnlocking() = withPickers {
+        app(prepare = {
+            slotList = listOf(
+                de.danerd.ghulsuite.model.SlotUi("k", de.danerd.ghulsuite.model.SlotType.SECURITY_KEY, "Key", 1_762_800_000_000),
+                de.danerd.ghulsuite.model.SlotUi("c", de.danerd.ghulsuite.model.SlotType.RECOVERY_CODE, "Code", 1_762_800_000_000),
+            )
+        }) { _, _ ->
+            waitFor("Your key has no backup")
+            shot("no-backup-asked")
+            onNodeWithTag("no-backup-setup", useUnmergedTree = true).performClick()
+            waitUntil(timeoutMillis = 10_000) { tagged("factor-step-confirm") }
+            assertTrue(shown("Set up a backup"))
+        }
+    }
+
+    /** Step 2 of the wizard: both choices (key and key file) at the top, without scrolling. */
+    @Test
+    fun theWizardShowsBothFactorsAtOnce() = withPickers {
+        app(setup = { showStart = true }, prepare = { unlocked.value = false; existsNow = false }) { _, _ ->
+            waitFor("Set up new")
+            text("Set up new").performClick()
+            waitFor("Master password")
+            onAllNodes(hasSetTextAction())[0].performTextInput("Kater-Ufer-Mondlicht-73")
+            onAllNodes(hasSetTextAction())[1].performTextInput("Kater-Ufer-Mondlicht-73")
+            text("Next").performClick()
+            waitFor("Security key (recommended)")
+            text("Security key (recommended)").assertIsDisplayed()
+            text("A small file you keep safe").assertIsDisplayed()
+            shot("setup-factor-choices")
+            // A key file: no backup step, one sentence about the copy instead.
+            text("A small file you keep safe").performClick()
+            waitUntil(timeoutMillis = 10_000) { part("No backup needed") }
+            assertFalse(shown("Backup for the key (required)"))
+        }
+    }
+
+    /**
+     * Options, Keys and key files: replacing a factor goes step by step: the protection of now
+     * first, then the new key (its instruction only then), then the old one gone, then saving.
+     */
+    @Test
+    fun replacingAFactorGoesStepByStep() = withPickers {
+        app(setup = { push(Screen.SettingsPage(SetPage.FACTORS)) }, prepare = { settings.factorKey = true }) { state, fake ->
+            waitUntil(timeoutMillis = 10_000) { tagged("factor-summary") }
+            assertTrue(part("Your protection: password + Security key with backup"))
+            assertFalse(shown("Add security key"))
+            assertTrue(tagged("factor-switch"))
+            onNodeWithTag("factor-replace-k", useUnmergedTree = true).performScrollTo().performClick()
+            waitUntil(timeoutMillis = 10_000) { tagged("factor-step-confirm") }
+            assertFalse(part("Plug in the new key"), "the instruction only when it is due")
+            val fields = { onAllNodes(hasSetTextAction() and hasAnyAncestor(isDialog())) }
+            fields()[0].performTextInput(fake.masterPassword)
+            fields()[1].performTextInput("1234")
+            onNodeWithTag("factor-next", useUnmergedTree = true).performClick()
+            waitUntil(timeoutMillis = 10_000) { tagged("factor-step-new_factor") }
+            assertEquals(listOf("confirmProtection"), fake.calls.filter { it.startsWith("confirm") || it.startsWith("replace") })
+            assertTrue(part("Plug in the new key"))
+            fields()[0].performTextInput("5678")
+            onNodeWithTag("factor-next", useUnmergedTree = true).performClick()
+            waitFor("New key set up.")
+            assertEquals(listOf("confirmProtection", "replaceFactors:key:k"), fake.calls.filter { it.startsWith("confirm") || it.startsWith("replace") })
+            onNodeWithTag("factor-next", useUnmergedTree = true).performClick()
+            waitUntil(timeoutMillis = 10_000) { tagged("factor-step-removed") }
+            assertTrue(part("The old factor is removed"))
+            onNodeWithTag("factor-next", useUnmergedTree = true).performClick()
+            waitUntil(timeoutMillis = 10_000) { tagged("factor-step-done") }
+            assertTrue(part("Older copies of the suite file"))
+            shot("factor-replace-done")
+            onNodeWithTag("factor-next", useUnmergedTree = true).performClick()
+            waitUntil(timeoutMillis = 10_000) { state.saveDialog != null }
+        }
+    }
+
     private fun withPickers(block: () -> Unit) {
         System.setProperty("ghul.pickers", "true")
         try {
@@ -1352,6 +1545,7 @@ class InteractionTest {
             assertEquals(saves, fake.calls.count { it.startsWith("archiveSave") }, "not saved twice")
             val saved = fake.calls.lastIndexOf("archiveSave:GhulSuite.ghlzip:true")
             assertTrue(saved >= 0 && saved < fake.calls.indexOf("deleteSuite") && fake.calls.indexOf("deleteSuite") < fake.calls.indexOf("create"), fake.calls.toString())
+            passSecondKeyGuide()
             waitFor("Areas")
             assertFalse(shown("Save the existing suite"))
             shot("setup-replaced")
@@ -1370,6 +1564,7 @@ class InteractionTest {
             onNode(hasText("Register key") and hasClickAction()).performScrollTo().performClick()
             waitUntil(timeoutMillis = 10_000) { "create" in fake.calls }
             // Areas, locking, then unlocking (fingerprint preset).
+            passSecondKeyGuide()
             waitFor("Areas")
             text("Next").performScrollTo().performClick()
             waitUntil(timeoutMillis = 10_000) { part("Step 5 of 8") }
@@ -1420,6 +1615,7 @@ class InteractionTest {
             waitUntil(timeoutMillis = 10_000) { "create" in fake.calls }
             assertTrue(fake.calls.indexOf("deleteSuite") in 0 until fake.calls.indexOf("create"), fake.calls.toString())
             assertTrue(fake.calls.none { it.startsWith("archiveSave") })
+            passSecondKeyGuide()
             waitFor("Areas")
         }
     }
